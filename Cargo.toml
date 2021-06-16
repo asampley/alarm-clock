@@ -1,5 +1,5 @@
 [workspace]
 members = [
-	"mus",
+	"alarm_clock",
 	"pre_table",
 ]
