@@ -1,0 +1,8 @@
+[package]
+name = "pre_table"
+version = "0.1.0"
+authors = ["pi"]
+edition = "2018"
+
+[lib]
+proc-macro = true

@@ -1,0 +1,5 @@
+[workspace]
+members = [
+	"mus",
+	"pre_table",
+]

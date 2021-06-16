@@ -1,0 +1,18 @@
+[package]
+name = "mus"
+version = "0.1.0"
+authors = ["Alex Sampley"]
+edition = "2018"
+
+[features]
+default = []
+sin = []
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+midly = "0.2.1"
+sysfs_gpio = "0.5.4"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5.5"
+pre_table = { path = "../pre_table" }
