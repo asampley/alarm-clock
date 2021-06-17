@@ -10,8 +10,8 @@ pub enum BuzzerMessage {
 
 #[derive(Debug)]
 pub enum ButtonMessage {
-	Press(usize),
-	Release(usize),
+	Press(u8),
+	Release(u8),
 }
 
 #[derive(Debug)]

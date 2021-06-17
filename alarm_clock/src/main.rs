@@ -1,6 +1,5 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time;
 use std::thread;
 
 use std::sync::mpsc;
@@ -22,7 +21,7 @@ mod selector;
 use selector::{LinearSelector, Selector};
 
 mod threads;
-use threads::buttons::poll_buttons;
+use threads::input::poll_inputs;
 use threads::buzzer::update_buzzer;
 use threads::player::midi_player;
 
@@ -30,13 +29,13 @@ use pre_table;
 
 #[cfg(test)] mod tests;
 
-fn main() -> sysfs_gpio::Result<()> {
+fn main() {
 	let mut args = std::env::args();
 
 	// parse arguments
 	if 2 != args.len() {
 		eprintln!("Usage: {} CONFIG", args.next().unwrap());
-		return Ok(());
+		return;
 	}
 
 	let args = args.collect::<Vec<_>>();
@@ -53,10 +52,8 @@ fn main() -> sysfs_gpio::Result<()> {
 
 	// create button pollers
 	let buttons = config.button_pins.iter()
-	.map(|&p|
-		Button::new(p, time::Duration::from_millis(200))
-			.expect(&format!("Unable to access gpio pin {0}.", p))
-	).collect::<Vec<_>>();
+	.map(|&p| Button::new(p).expect(&format!("Unable to access gpio pin {0}.", p)))
+	.collect::<Vec<_>>();
 
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
@@ -68,7 +65,7 @@ fn main() -> sysfs_gpio::Result<()> {
 
 	// start thread to read poll button
 	let _thread_buttons = thread::spawn(move || {
-		poll_buttons(button_sender, buttons)
+		poll_inputs(button_sender, buttons)
 	});
 
 	// start playing midi file

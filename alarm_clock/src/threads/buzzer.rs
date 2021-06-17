@@ -6,14 +6,14 @@ use crate::circuit::Buzzer;
 use crate::message::BuzzerMessage;
 use crate::note::MidiNote;
 
-pub fn update_buzzer(note_receiver: mpsc::Receiver<BuzzerMessage>, mut buzzer: Buzzer<MidiNote>) -> sysfs_gpio::Result<f64> {
+pub fn update_buzzer(note_receiver: mpsc::Receiver<BuzzerMessage>, mut buzzer: Buzzer<MidiNote>) -> f64 {
 	let start = time::Instant::now();
 	let mut updates: u64 = 0;
 
 	loop {
 		updates += 1;
 
-		buzzer.update()?;
+		buzzer.update();
 		match note_receiver.try_recv() {
 			Ok(msg) => match msg {
 				BuzzerMessage::Note { on: true, note } => buzzer.add_note(note),
@@ -30,5 +30,5 @@ pub fn update_buzzer(note_receiver: mpsc::Receiver<BuzzerMessage>, mut buzzer: B
 		}
 	}
 
-	Ok(updates as f64 / start.elapsed().as_secs() as f64)
+	updates as f64 / start.elapsed().as_secs() as f64
 }
