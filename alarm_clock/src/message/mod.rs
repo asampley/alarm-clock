@@ -22,6 +22,14 @@ pub enum PlayerMessage {
 
 #[derive(Debug)]
 pub enum AlphanumMessage {
+	Static([char; 4]),
 	Text(String),
+	Time,
 	Empty,
+}
+
+#[derive(Debug)]
+pub enum SongEventMessage {
+	Start(String),
+	End(String),
 }

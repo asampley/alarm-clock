@@ -2,3 +2,4 @@ buzzer_pin = 12
 button_pins = [ 13 ]
 midi_dir = "/home/pi/Programs/mus/midi/"
 brightness = 0
+scroll_delay_ms = 200

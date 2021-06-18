@@ -1,10 +1,11 @@
 use std::convert::TryInto;
 use std::fs;
+use std::path::Path;
 use std::sync::mpsc;
 use std::sync::mpsc::TryRecvError::{Disconnected, Empty};
 use std::time;
 
-use crate::message::{BuzzerMessage, PlayerMessage};
+use crate::message::{BuzzerMessage, PlayerMessage, SongEventMessage};
 
 use crate::note::MidiNote;
 
@@ -15,34 +16,32 @@ use midly::EventKind;
 use midly::Timing;
 
 pub fn midi_player(
-	receiver: mpsc::Receiver<PlayerMessage>,
-	sender: mpsc::Sender<BuzzerMessage>
+	player_receiver: mpsc::Receiver<PlayerMessage>,
+	note_sender: mpsc::Sender<BuzzerMessage>,
+	song_event_sender: mpsc::Sender<SongEventMessage>,
 ) {
 	let mut playing_name = None;
 
 	loop {
 		// stopped loop
 		while playing_name == None {
-			match receiver.try_recv() {
+			match player_receiver.recv() {
 				Ok(message) => match message {
 					PlayerMessage::Play(name) => {
 						playing_name = Some(name);
 					}
 					PlayerMessage::Stop => (),
 				}
-				Err(e) => match e {
-					Empty => (),
-					Disconnected => return,
-				}
+				Err(_) => return,
 			}
 		}
 
 		// playing
-		if playing_name != None {
-			println!("Now playing {:?}", playing_name.as_ref().unwrap());
+		if let Some(ref some_name) = playing_name {
+			song_event_sender.send(SongEventMessage::Start(song_name(some_name))).unwrap();
 
 			// load file and set initial variables
-			let midi_file = fs::read(&playing_name.as_ref().unwrap()).expect("Unable to read midi file");
+			let midi_file = fs::read(some_name).expect("Unable to read midi file");
 			let smf = Smf::parse(&midi_file).expect("Unable to parse midi file");
 			let tracks = &smf.tracks;
 
@@ -74,18 +73,21 @@ pub fn midi_player(
 			loop {
 				// break out of loop when there are no more notes
 				if !events.iter_mut().any(|ev| ev.peek().is_some()) {
+					song_event_sender.send(SongEventMessage::End(song_name(some_name))).unwrap();
 					playing_name = None;
 					break;
 				}
 
 				// break if any new messages are received
-				match receiver.try_recv() {
+				match player_receiver.try_recv() {
 					Ok(message) => match message {
 						PlayerMessage::Play(name) => {
+							song_event_sender.send(SongEventMessage::End(song_name(some_name))).unwrap();
 							playing_name = Some(name);
 							break;
 						}
 						PlayerMessage::Stop => {
+							song_event_sender.send(SongEventMessage::End(song_name(some_name))).unwrap();
 							playing_name = None;
 							break;
 						}
@@ -110,7 +112,7 @@ pub fn midi_player(
 						match event.kind {
 							EventKind::Midi { channel: _, message } => {
 								if let Some((on, note)) = midi_to_buzzer(message) {
-									sender.send(BuzzerMessage::Note{on, note}).unwrap();
+									note_sender.send(BuzzerMessage::Note{on, note}).unwrap();
 								}
 							}
 							EventKind::Meta(MetaMessage::Tempo(new_tempo)) => {
@@ -131,7 +133,7 @@ pub fn midi_player(
 			}
 		}
 
-		sender.send(BuzzerMessage::Clear).unwrap();
+		note_sender.send(BuzzerMessage::Clear).unwrap();
 	}
 }
 
@@ -155,4 +157,8 @@ fn midi_to_buzzer(msg: MidiMessage) -> Option<(bool, MidiNote)> {
 		)),
 		_ => None,
 	}
+}
+
+fn song_name(path: &Path) -> String {
+	path.file_stem().map_or("".to_owned(), |s| s.to_string_lossy().into_owned())
 }

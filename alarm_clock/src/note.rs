@@ -1,4 +1,4 @@
-use crate::pre_table::freq_table;
+use pre_table::freq_table;
 
 freq_table!(F);
 

@@ -6,4 +6,5 @@ pub struct Config {
 	pub button_pins: Vec<u8>,
 	pub midi_dir: String,
 	pub brightness: u8,
+	pub scroll_delay_ms: u64,
 }

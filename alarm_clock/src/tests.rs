@@ -2,7 +2,7 @@
 
 use crate::MidiNote;
 use crate::note::Note;
-use crate::circuit::{Buzzer, gpio::GpioError};
+use crate::circuit::{Buzzer};
 use crate::selector::{BinarySelector, LinearSelector, Selector};
 
 use std::{thread, time};
@@ -28,7 +28,7 @@ fn test_freqencies() {
 /// qualitative test only
 /// uses pin 12
 #[test] #[ignore]
-fn test_range() -> Result<(), GpioError> {
+fn test_range() -> rppal::gpio::Result<()> {
 	let mut buzzer = Buzzer::new(12)?;
 	let dur = time::Duration::from_millis(500);
 
@@ -37,7 +37,7 @@ fn test_range() -> Result<(), GpioError> {
 
 		let time = time::Instant::now();
 		while time.elapsed() < dur {
-			buzzer.update()?;
+			buzzer.update();
 		}
 
 		buzzer.remove_note(&MidiNote(note));
