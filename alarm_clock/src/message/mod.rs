@@ -19,3 +19,9 @@ pub enum PlayerMessage {
 	Play(PathBuf),
 	Stop,
 }
+
+#[derive(Debug)]
+pub enum AlphanumMessage {
+	Text(String),
+	Empty,
+}

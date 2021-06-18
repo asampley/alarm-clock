@@ -1,18 +1,19 @@
 use std::fs;
+use std::sync::mpsc;
 use std::path::{Path, PathBuf};
 use std::thread;
-
-use std::sync::mpsc;
+use std::time::Duration;
 
 mod circuit;
 use circuit::Buzzer;
 use circuit::Button;
+use circuit::Alphanum;
 
 mod config;
 use config::Config;
 
 mod message;
-use message::{ButtonMessage, PlayerMessage};
+use message::{AlphanumMessage, ButtonMessage, PlayerMessage};
 
 mod note;
 use note::MidiNote;
@@ -24,6 +25,7 @@ mod threads;
 use threads::input::poll_inputs;
 use threads::buzzer::update_buzzer;
 use threads::player::midi_player;
+use threads::alphanum::alphanum_thread;
 
 use pre_table;
 
@@ -52,13 +54,18 @@ fn main() {
 
 	// create button pollers
 	let buttons = config.button_pins.iter()
-	.map(|&p| Button::new(p).expect(&format!("Unable to access gpio pin {0}.", p)))
-	.collect::<Vec<_>>();
+		.map(|&p| Button::new(p).expect(&format!("Unable to access gpio pin {0}.", p)))
+		.collect::<Vec<_>>();
+
+	// create alphanum controller
+	let mut alphanum = Alphanum::new().expect("Unable to create alphanum display struct");
+	alphanum.set_brightness(config.brightness);
 
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
 	let (button_sender, button_receiver) = mpsc::channel();
 	let (player_sender, player_receiver) = mpsc::channel();
+	let (alphanum_sender, alphanum_receiver) = mpsc::channel();
 
 	// start thread to update buzzer
 	let _thread_buzzer = thread::spawn(move || update_buzzer(midi_note_receiver, buzzer));
@@ -70,6 +77,9 @@ fn main() {
 
 	// start playing midi file
 	let _thread_midi_player = thread::spawn(move || midi_player(player_receiver, midi_note_sender));
+
+	// start display thread
+	let _thread_display = thread::spawn(move || alphanum_thread(alphanum, alphanum_receiver, Duration::from_millis(500)));
 
 	let mut midi_files = list_files(&config.midi_dir)
 		.expect(&format!("Unable to read the directory \"{:?}\"", config.midi_dir))
@@ -90,6 +100,15 @@ fn main() {
 
 					player_sender.send(PlayerMessage::Play(midi_file.clone()))
 						.expect("Unable to send midi file name");
+
+					alphanum_sender.send(
+						AlphanumMessage::Text(
+							midi_file.as_path()
+								.file_stem()
+								.map(|s| s.to_string_lossy().into_owned())
+								.unwrap_or("".to_owned())
+						)
+					);
 				}
 			}
 			ButtonMessage::Release(_) => (),
