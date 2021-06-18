@@ -1,4 +1,4 @@
-use std::cmp::{ min, max };
+use std::cmp::min;
 
 pub trait Selector<T> {
 	fn incr(&mut self) -> &T;

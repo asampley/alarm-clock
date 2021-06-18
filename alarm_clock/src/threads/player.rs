@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::TryRecvError::{Disconnected, Empty};
 use std::time;
 
-use crate::message::{BuzzerMessage, PlayerMessage, SongEventMessage};
+use crate::message::{BuzzerMessage, PlayerMessage, EventMessage, SongEvent};
 
 use crate::note::MidiNote;
 
@@ -18,7 +18,7 @@ use midly::Timing;
 pub fn midi_player(
 	player_receiver: mpsc::Receiver<PlayerMessage>,
 	note_sender: mpsc::Sender<BuzzerMessage>,
-	song_event_sender: mpsc::Sender<SongEventMessage>,
+	event_sender: mpsc::Sender<EventMessage>,
 ) {
 	let mut playing_name = None;
 
@@ -38,7 +38,7 @@ pub fn midi_player(
 
 		// playing
 		if let Some(ref some_name) = playing_name {
-			song_event_sender.send(SongEventMessage::Start(song_name(some_name))).unwrap();
+			event_sender.send(SongEvent::Start(song_name(some_name)).into()).unwrap();
 
 			// load file and set initial variables
 			let midi_file = fs::read(some_name).expect("Unable to read midi file");
@@ -73,7 +73,7 @@ pub fn midi_player(
 			loop {
 				// break out of loop when there are no more notes
 				if !events.iter_mut().any(|ev| ev.peek().is_some()) {
-					song_event_sender.send(SongEventMessage::End(song_name(some_name))).unwrap();
+					event_sender.send(SongEvent::End(song_name(some_name)).into()).unwrap();
 					playing_name = None;
 					break;
 				}
@@ -82,12 +82,12 @@ pub fn midi_player(
 				match player_receiver.try_recv() {
 					Ok(message) => match message {
 						PlayerMessage::Play(name) => {
-							song_event_sender.send(SongEventMessage::End(song_name(some_name))).unwrap();
+							event_sender.send(SongEvent::End(song_name(some_name)).into()).unwrap();
 							playing_name = Some(name);
 							break;
 						}
 						PlayerMessage::Stop => {
-							song_event_sender.send(SongEventMessage::End(song_name(some_name))).unwrap();
+							event_sender.send(SongEvent::End(song_name(some_name)).into()).unwrap();
 							playing_name = None;
 							break;
 						}

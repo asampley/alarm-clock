@@ -1,5 +1,5 @@
 use std::fs;
-use std::sync::mpsc::{ self, TryRecvError };
+use std::sync::mpsc;
 use std::sync::RwLock;
 use std::path::{Path, PathBuf};
 use std::thread;
@@ -16,7 +16,7 @@ mod config;
 use config::Config;
 
 mod message;
-use message::{AlphanumMessage, ButtonMessage, PlayerMessage, SongEventMessage};
+use message::{AlphanumMessage, PlayerMessage, EventMessage, ButtonEvent, SongEvent};
 
 mod note;
 use note::MidiNote;
@@ -84,29 +84,31 @@ fn main() -> Result<(), Error> {
 
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
-	let (button_sender, button_receiver) = mpsc::channel();
+	let (event_sender, event_receiver) = mpsc::channel();
 	let (player_sender, player_receiver) = mpsc::channel();
 	let (alphanum_sender, alphanum_receiver) = mpsc::channel();
-	let (song_event_sender, song_event_receiver) = mpsc::channel();
 
 	// start thread to update buzzer
 	let _thread_buzzer = thread::spawn(move || update_buzzer(midi_note_receiver, buzzer));
 
 	// start thread to read poll button
-	let _thread_buttons = thread::spawn(move || {
-		poll_inputs(button_sender, buttons)
-	});
+	let _thread_buttons = {
+		let event_sender_2 = event_sender.clone();
+		thread::spawn(move || { poll_inputs(event_sender_2, buttons) })
+	};
 
 	// start playing midi file
 	let _thread_midi_player = thread::spawn(move ||
-		midi_player(player_receiver, midi_note_sender, song_event_sender)
+		midi_player(player_receiver, midi_note_sender, event_sender)
 	);
 
 	// start display thread
-	let scroll_delay = Duration::from_millis(config.scroll_delay_ms);
-	let _thread_display = thread::spawn(move ||
-		alphanum_thread(alphanum, alphanum_receiver, scroll_delay)
-	);
+	let _thread_display = {
+		let scroll_delay = Duration::from_millis(config.scroll_delay_ms);
+		thread::spawn(move ||
+			alphanum_thread(alphanum, alphanum_receiver, scroll_delay)
+		)
+	};
 
 	let mut midi_files = list_files(&config.midi_dir)
 		.expect(&format!("Unable to read the directory \"{:?}\"", config.midi_dir))
@@ -116,43 +118,35 @@ fn main() -> Result<(), Error> {
 	let mut selector = LinearSelector::new(midi_files);
 
 	loop {
-		match button_receiver.try_recv() {
+		match event_receiver.recv() {
 			Ok(msg) => match msg {
-				ButtonMessage::Press(x) => {
-					if x == 0 || x == 1 {
-						let midi_file = if x == 0 {
-							selector.incr()
-						} else {
-							selector.decr()
-						};
+				EventMessage::Button(button) => match button {
+					ButtonEvent::Press(x) => {
+						if x == 0 || x == 1 {
+							let midi_file = if x == 0 {
+								selector.incr()
+							} else {
+								selector.decr()
+							};
 
-						player_sender.send(PlayerMessage::Play(midi_file.clone()))
-							.expect("Unable to send midi file name");
+							player_sender.send(PlayerMessage::Play(midi_file.clone()))
+								.expect("Unable to send midi file name");
+						}
+					}
+					ButtonEvent::Release(_) => (),
+				}
+				EventMessage::Song(song) => match song {
+					SongEvent::Start(name) => {
+						println!("Now playing {:?}", name);
+						alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+					}
+					SongEvent::End(name) => {
+						println!("Stopped playing {:?}", name);
+						alphanum_sender.send(AlphanumMessage::Time).unwrap();
 					}
 				}
-				ButtonMessage::Release(_) => (),
 			}
-			Err(e) => match e {
-				TryRecvError::Empty => (),
-				TryRecvError::Disconnected => break,
-			}
-		}
-
-		match song_event_receiver.try_recv() {
-			Ok(msg) => match msg {
-				SongEventMessage::Start(name) => {
-					println!("Now playing {:?}", name);
-					alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
-				}
-				SongEventMessage::End(name) => {
-					println!("Stopped playing {:?}", name);
-					alphanum_sender.send(AlphanumMessage::Time).unwrap();
-				}
-			}
-			Err(e) => match e {
-				TryRecvError::Empty => (),
-				TryRecvError::Disconnected => break,
-			}
+			Err(_) => break,
 		}
 	}
 

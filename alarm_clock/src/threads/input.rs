@@ -5,7 +5,7 @@ use std::time::{ Duration, Instant };
 use rppal::gpio::{ Gpio, Level };
 
 use crate::circuit::Button;
-use crate::message::ButtonMessage;
+use crate::message::{ EventMessage, ButtonEvent };
 
 struct Input {
 	input_type: InputType,
@@ -28,7 +28,7 @@ enum InputType {
 }
 
 pub fn poll_inputs(
-	button_sender: mpsc::Sender<ButtonMessage>,
+	event_sender: mpsc::Sender<EventMessage>,
 	buttons: Vec<Button>,
 ) -> rppal::gpio::Result<()> {
 	let gpio = Gpio::new()?;
@@ -50,8 +50,10 @@ pub fn poll_inputs(
 
 			if input.last_event.map_or(true, |e| e + input.bounce_time >= Instant::now()) {
 				match (&input.input_type, level) {
-					(InputType::Button(i), Level::High) => button_sender.send(ButtonMessage::Press(*i)),
-					(InputType::Button(i), Level::Low) => button_sender.send(ButtonMessage::Release(*i)),
+					(InputType::Button(i), Level::High)
+						=> event_sender.send(ButtonEvent::Press(*i).into()),
+					(InputType::Button(i), Level::Low)
+						=> event_sender.send(ButtonEvent::Release(*i).into()),
 				}.unwrap();
 			}
 		}
