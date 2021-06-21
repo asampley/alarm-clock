@@ -1,10 +1,9 @@
-use std::convert::TryInto;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::{ Duration, Instant };
 
-use crate::TIME_ZERO;
+use crate::{ TIME_ZERO, ALARM_TIME, ClockTime };
 
 use crate::selector::{ BinarySelector, LinearSelector, Selector };
 
@@ -16,27 +15,68 @@ use crate::message::{
 	SongEvent,
 };
 
-pub type StateFn<'a> = Box<dyn FnMut(EventMessage) -> Option<State> + 'a>;
+fn send_time(alphanum_sender: &mut Sender<AlphanumMessage>, time: ClockTime) {
+	alphanum_sender.send(AlphanumMessage::Static(time.as_chars()))
+		.expect("Unable to send selected time to alphanum");
+}
+
+fn set_time(time: ClockTime) {
+	*TIME_ZERO.write().unwrap() = Instant::now() - Duration::from(time)
+}
+
+
+pub trait State {
+	fn init(&mut self) {}
+
+	fn event(&mut self, event: EventMessage) -> Option<StateId> {
+		match event {
+			EventMessage::Button(button) => match button {
+				ButtonEvent::Press(x) => self.button_press(x),
+				ButtonEvent::Release(x) => self.button_release(x),
+			}
+			EventMessage::Song(song) => match song {
+				SongEvent::Start(name) => self.song_start(name),
+				SongEvent::End(name) => self.song_end(name),
+			}
+		}
+	}
+
+	fn button_press(&mut self, _button_id: u8) -> Option<StateId> {
+		None
+	}
+
+	fn button_release(&mut self, _button_id: u8) -> Option<StateId> {
+		None
+	}
+
+	fn song_start(&mut self, _name: String) -> Option<StateId> {
+		None
+	}
+
+	fn song_end(&mut self, _name: String) -> Option<StateId> {
+		None
+	}
+}
 
 #[derive(Clone, Copy, Debug)]
-pub enum State {
-	Time,
+pub enum StateId {
+	Clock,
 	ModeSelect,
-	TimeSet,
+	ClockSet,
 	AlarmTime,
 	AlarmSong,
 	Play,
 	Bad,
 }
 
-impl fmt::Display for State {
+impl fmt::Display for StateId {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		use State::*;
+		use StateId::*;
 
 		let name = match self {
-			Time => "Time",
+			Clock => "Clock",
 			ModeSelect => "Mode Select",
-			TimeSet => "Time Set",
+			ClockSet => "Clock Set",
 			AlarmTime => "Alarm Time",
 			AlarmSong => "Alarm Song",
 			Play => "Play",
@@ -47,245 +87,282 @@ impl fmt::Display for State {
 	}
 }
 
-pub fn state_time<'a>(
-	alphanum_sender: &'a mut Sender<AlphanumMessage>
-) -> StateFn<'a> {
-	use EventMessage::*;
-	use ButtonEvent::*;
-
-	alphanum_sender.send(AlphanumMessage::Time).unwrap();
-
-	Box::new(move |msg| match msg {
-		Button(button) => match button {
-			Press(x) => match x {
-				2 => Some(State::ModeSelect),
-				_ => None,
-			}
-			Release(_) => None,
-		}
-		Song(_) => None
-	})
+pub struct StateClock {
+	alphanum_sender: Sender<AlphanumMessage>,
 }
 
-pub fn state_mode_select<'a>(
-	alphanum_sender: &'a mut Sender<AlphanumMessage>
-) -> StateFn<'a> {
-	let mut mode_selector = LinearSelector::new(vec![
-		State::TimeSet,
-		State::AlarmTime,
-		State::AlarmSong,
-		State::Play,
-	]);
-
-	let mut state = *mode_selector.curr();
-	alphanum_sender.send(AlphanumMessage::Text(state.to_string())).unwrap();
-
-	Box::new(move |msg| match msg {
-		EventMessage::Button(button) => match button {
-			ButtonEvent::Press(x) => match x {
-				0 | 1 => {
-					state = *if x == 0 {
-						mode_selector.incr()
-					} else {
-						mode_selector.decr()
-					};
-
-					alphanum_sender.send(AlphanumMessage::Text(state.to_string())).unwrap();
-
-					None
-				}
-				2 => Some(state),
-				_ => None,
-			}
-			ButtonEvent::Release(_) => None,
-		}
-		EventMessage::Song(_) => None,
-	})
+impl StateClock {
+	pub fn new(alphanum_sender: Sender<AlphanumMessage>) -> Self {
+		Self { alphanum_sender }
+	}
 }
 
-pub fn state_time_set<'a>(
-	alphanum_sender: &'a mut Sender<AlphanumMessage>,
-) -> StateFn<'a> {
-	let mut time_selector = BinarySelector::new((0..24*60).collect::<Vec<_>>());
+impl State for StateClock {
+	fn init(&mut self) {
+		self.alphanum_sender.send(AlphanumMessage::Time).unwrap();
+	}
 
-	let time = *time_selector.curr();
-
-	let (hours, minutes) = (time / 60, time % 60);
-
-	alphanum_sender.send(AlphanumMessage::Static(
-		format!("{:02}{:02}", hours, minutes).chars().collect::<Vec<_>>().try_into().unwrap()
-	)).expect("Unable to send selected time to alphanum");
-
-	Box::new(move |msg| match msg {
-		EventMessage::Button(button) => match button {
-			ButtonEvent::Press(x) => match x {
-				0 | 1 => {
-					let time = if x == 0 {
-						time_selector.incr()
-					} else {
-						time_selector.decr()
-					};
-
-					let (hours, minutes) = (time / 60, time % 60);
-
-					alphanum_sender.send(AlphanumMessage::Static(
-						format!("{:02}{:02}", hours, minutes).chars().collect::<Vec<_>>().try_into().unwrap()
-					)).expect("Unable to send selected time to alphanum");
-
-					None
-				}
-				2 => {
-					*TIME_ZERO.write().unwrap()
-						= Instant::now() - Duration::from_secs(time_selector.curr() * 60);
-
-					Some(State::Time)
-				}
-				_ => None,
-			}
-			ButtonEvent::Release(_) => None,
+	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
+		match button_id {
+			2 => Some(StateId::ModeSelect),
+			_ => None,
 		}
-		EventMessage::Song(_) => None,
-	})
+	}
 }
 
-pub fn state_alarm_time_set<'a>(
-	alphanum_sender: &'a mut Sender<AlphanumMessage>,
-) -> StateFn<'a> {
-	let mut time_selector = BinarySelector::new((0..24*60).collect::<Vec<_>>());
-
-	let time = *time_selector.curr();
-
-	let (hours, minutes) = (time / 60, time % 60);
-
-	alphanum_sender.send(AlphanumMessage::Static(
-		format!("{:02}{:02}", hours, minutes).chars().collect::<Vec<_>>().try_into().unwrap()
-	)).expect("Unable to send selected time to alphanum");
-
-	Box::new(move |msg| match msg {
-		EventMessage::Button(button) => match button {
-			ButtonEvent::Press(x) => match x {
-				0 | 1 => {
-					let time = if x == 0 {
-						time_selector.incr()
-					} else {
-						time_selector.decr()
-					};
-
-					let (hours, minutes) = (time / 60, time % 60);
-
-					alphanum_sender.send(AlphanumMessage::Static(
-						format!("{:02}{:02}", hours, minutes).chars().collect::<Vec<_>>().try_into().unwrap()
-					)).expect("Unable to send selected time to alphanum");
-
-					None
-				}
-				2 => {
-					// TODO
-					Some(State::Time)
-				}
-				_ => None,
-			}
-			ButtonEvent::Release(_) => None,
-		}
-		EventMessage::Song(_) => None,
-	})
+pub struct StateModeSelect {
+	alphanum_sender: Sender<AlphanumMessage>,
+	mode_selector: LinearSelector<StateId>,
 }
 
-pub fn state_alarm_song_set<'a>(
-	midi_files: &'a Vec<PathBuf>,
-	alphanum_sender: &'a mut Sender<AlphanumMessage>,
-	player_sender: &'a mut Sender<PlayerMessage>,
-) -> StateFn<'a> {
-	let mut midi_selector = LinearSelector::new(midi_files.clone());
-
-	Box::new(move |msg| match msg {
-		EventMessage::Button(button) => match button {
-			ButtonEvent::Press(x) => match x {
-				0 | 1 => {
-					let midi_file = if x == 0 {
-						midi_selector.incr()
-					} else {
-						midi_selector.decr()
-					};
-
-					player_sender.send(PlayerMessage::Play(midi_file.clone()))
-						.expect("Unable to send midi file name");
-
-					None
-				}
-				2 => {
-					// TODO set song
-					player_sender.send(PlayerMessage::Stop)
-						.expect("Unable to stop currently playing");
-
-					Some(State::Time)
-				}
-				_ => None,
-			}
-			ButtonEvent::Release(_) => None,
+impl StateModeSelect {
+	pub fn new(alphanum_sender: Sender<AlphanumMessage>) -> Self {
+		Self {
+			alphanum_sender,
+			mode_selector: LinearSelector::new(vec![
+				StateId::Clock,
+				StateId::ClockSet,
+				StateId::AlarmTime,
+				StateId::AlarmSong,
+				StateId::Play,
+			]),
 		}
-		EventMessage::Song(song) => match song {
-			SongEvent::Start(name) => {
-				println!("Now playing {:?}", name);
-				alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+	}
+}
+
+impl State for StateModeSelect {
+	fn init(&mut self) {
+		self.alphanum_sender.send(AlphanumMessage::Text(self.mode_selector.curr().to_string())).unwrap();
+	}
+
+	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
+		match button_id {
+			0 | 1 => {
+				let state = if button_id == 0 {
+					self.mode_selector.incr()
+				} else {
+					self.mode_selector.decr()
+				};
+
+				self.alphanum_sender.send(AlphanumMessage::Text(state.to_string())).unwrap();
 
 				None
 			}
-			SongEvent::End(name) => {
-				println!("Stopped playing {:?}", name);
-				alphanum_sender.send(AlphanumMessage::Text("Play".to_owned())).unwrap();
-
-				None
-			}
+			2 => Some(*self.mode_selector.curr()),
+			_ => None,
 		}
-	})
+	}
 }
 
-pub fn state_play<'a>(
-	midi_files: &'a Vec<PathBuf>,
-	alphanum_sender: &'a mut Sender<AlphanumMessage>,
-	player_sender: &'a mut Sender<PlayerMessage>,
-) -> StateFn<'a> {
-	let mut midi_selector = LinearSelector::new(midi_files.clone());
+pub struct StateClockSet {
+	alphanum_sender: Sender<AlphanumMessage>,
+	time_selector: BinarySelector<ClockTime>,
+}
 
-	Box::new(move |msg| match msg {
-		EventMessage::Button(button) => match button {
-			ButtonEvent::Press(x) => match x {
-				0 | 1 => {
-					let midi_file = if x == 0 {
-						midi_selector.incr()
-					} else {
-						midi_selector.decr()
-					};
-
-					player_sender.send(PlayerMessage::Play(midi_file.clone()))
-						.expect("Unable to send midi file name");
-
-					None
-				}
-				2 => {
-					player_sender.send(PlayerMessage::Stop)
-						.expect("Unable to stop currently playing");
-
-					Some(State::Time)
-				}
-				_ => None,
-			}
-			ButtonEvent::Release(_) => None,
+impl StateClockSet {
+	pub fn new(alphanum_sender: Sender<AlphanumMessage>) -> Self {
+		Self {
+			alphanum_sender,
+			time_selector: BinarySelector::new(
+				(0..24*60)
+					.map(|i| ClockTime::new(i))
+					.collect::<Vec<_>>()
+			),
 		}
-		EventMessage::Song(song) => match song {
-			SongEvent::Start(name) => {
-				println!("Now playing {:?}", name);
-				alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+	}
+}
+
+impl State for StateClockSet {
+	fn init(&mut self) {
+		send_time(&mut self.alphanum_sender, *self.time_selector.curr());
+	}
+
+	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
+		match button_id {
+			0 | 1 => {
+				let time = if button_id == 0 {
+					self.time_selector.incr()
+				} else {
+					self.time_selector.decr()
+				};
+
+				send_time(&mut self.alphanum_sender, *time);
 
 				None
 			}
-			SongEvent::End(name) => {
-				println!("Stopped playing {:?}", name);
-				alphanum_sender.send(AlphanumMessage::Text("Play".to_owned())).unwrap();
+			2 => {
+				set_time(*self.time_selector.curr());
+
+				Some(StateId::Clock)
+			}
+			_ => None,
+		}
+	}
+}
+
+pub struct StateAlarmTimeSet {
+	alphanum_sender: Sender<AlphanumMessage>,
+	time_selector: BinarySelector<ClockTime>,
+}
+
+impl StateAlarmTimeSet {
+	pub fn new(alphanum_sender: Sender<AlphanumMessage>) -> Self {
+		Self {
+			alphanum_sender,
+			time_selector: BinarySelector::new(
+				(0..24*60)
+					.map(|i| ClockTime::new(i))
+					.collect::<Vec<_>>()
+			),
+		}
+	}
+}
+
+impl State for StateAlarmTimeSet {
+	fn init(&mut self) {
+		send_time(&mut self.alphanum_sender, *self.time_selector.curr());
+	}
+
+	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
+		match button_id {
+			0 | 1 => {
+				let time = if button_id == 0 {
+					self.time_selector.incr()
+				} else {
+					self.time_selector.decr()
+				};
+
+				send_time(&mut self.alphanum_sender, *time);
 
 				None
 			}
+			2 => {
+				*ALARM_TIME.write().unwrap() = *self.time_selector.curr();
+
+				Some(StateId::Clock)
+			}
+			_ => None,
 		}
-	})
+	}
+}
+
+pub struct StateAlarmSongSet {
+	alphanum_sender: Sender<AlphanumMessage>,
+	player_sender: Sender<PlayerMessage>,
+	midi_selector: LinearSelector<PathBuf>,
+}
+
+impl StateAlarmSongSet {
+	pub fn new(
+		alphanum_sender: Sender<AlphanumMessage>,
+		player_sender: Sender<PlayerMessage>,
+		midi_files: Vec<PathBuf>,
+	) -> Self {
+		Self {
+			alphanum_sender,
+			player_sender,
+			midi_selector: LinearSelector::new(midi_files.clone()),
+		}
+	}
+}
+
+impl State for StateAlarmSongSet {
+	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
+		match button_id {
+			0 | 1 => {
+				let midi_file = if button_id == 0 {
+					self.midi_selector.incr()
+				} else {
+					self.midi_selector.decr()
+				};
+
+				self.player_sender.send(PlayerMessage::Play(midi_file.clone()))
+					.expect("Unable to send midi file name");
+
+				None
+			}
+			2 => {
+				// TODO set song
+				self.player_sender.send(PlayerMessage::Stop)
+					.expect("Unable to stop currently playing");
+
+				Some(StateId::Clock)
+			}
+			_ => None,
+		}
+	}
+
+	fn song_start(&mut self, name: String) -> Option<StateId> {
+		println!("Now playing {:?}", name);
+		self.alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+
+		None
+	}
+
+	fn song_end(&mut self, name: String) -> Option<StateId> {
+		println!("Stopped playing {:?}", name);
+		self.alphanum_sender.send(AlphanumMessage::Text("Play".to_owned())).unwrap();
+
+		None
+	}
+}
+
+pub struct StatePlay {
+	alphanum_sender: Sender<AlphanumMessage>,
+	player_sender: Sender<PlayerMessage>,
+	midi_selector: LinearSelector<PathBuf>,
+}
+
+impl StatePlay {
+	pub fn new(
+		alphanum_sender: Sender<AlphanumMessage>,
+		player_sender: Sender<PlayerMessage>,
+		midi_files: Vec<PathBuf>,
+	) -> Self {
+		Self {
+			alphanum_sender,
+			player_sender,
+			midi_selector: LinearSelector::new(midi_files.clone()),
+		}
+	}
+}
+
+impl State for StatePlay {
+	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
+		match button_id {
+			0 | 1 => {
+				let midi_file = if button_id == 0 {
+					self.midi_selector.incr()
+				} else {
+					self.midi_selector.decr()
+				};
+
+				self.player_sender.send(PlayerMessage::Play(midi_file.clone()))
+					.expect("Unable to send midi file name");
+
+				None
+			}
+			2 => {
+				self.player_sender.send(PlayerMessage::Stop)
+					.expect("Unable to stop currently playing");
+
+				Some(StateId::Clock)
+			}
+			_ => None,
+		}
+	}
+
+	fn song_start(&mut self, name: String) -> Option<StateId> {
+		println!("Now playing {:?}", name);
+		self.alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+
+		None
+	}
+
+	fn song_end(&mut self, name: String) -> Option<StateId> {
+		println!("Stopped playing {:?}", name);
+		self.alphanum_sender.send(AlphanumMessage::Text("Play".to_owned())).unwrap();
+
+		None
+	}
 }

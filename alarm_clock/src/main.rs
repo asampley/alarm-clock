@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::fs;
 use std::sync::mpsc;
 use std::sync::RwLock;
@@ -16,6 +17,7 @@ mod config;
 use config::Config;
 
 mod message;
+use message::{ EventMessage, SongEvent };
 
 mod note;
 use note::MidiNote;
@@ -24,13 +26,14 @@ mod selector;
 
 mod states;
 use states::{
+	StateId,
 	State,
-	state_time,
-	state_mode_select,
-	state_time_set,
-	state_alarm_time_set,
-	state_alarm_song_set,
-	state_play,
+	StateClock,
+	StateModeSelect,
+	StateClockSet,
+	StateAlarmTimeSet,
+	StateAlarmSongSet,
+	StatePlay,
 };
 
 mod threads;
@@ -42,6 +45,40 @@ use threads::alphanum::alphanum_thread;
 #[cfg(test)] mod tests;
 
 static TIME_ZERO: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(Instant::now()));
+static ALARM_TIME: Lazy<RwLock<ClockTime>> = Lazy::new(|| RwLock::new(ClockTime::new(0)));
+
+#[derive(Clone, Copy, Debug)]
+pub struct ClockTime {
+	minutes: u16
+}
+
+impl ClockTime {
+	pub fn new(minutes: u16) -> Self {
+		Self { minutes: minutes % (24 * 60) }
+	}
+
+	pub fn hours(&self) -> u8 {
+		(self.minutes / 60) as u8
+	}
+
+	pub fn minutes(&self) -> u8 {
+		(self.minutes % 60) as u8
+	}
+
+	pub fn as_chars(&self) -> [char; 4] {
+		format!("{:02}{:02}", self.hours(), self.minutes())
+			.chars()
+			.collect::<Vec<_>>()
+			.try_into()
+			.unwrap()
+	}
+}
+
+impl From<ClockTime> for Duration {
+	fn from(clock_time: ClockTime) -> Self {
+		Duration::from_secs(clock_time.minutes as u64 * 60)
+	}
+}
 
 #[derive(Debug)]
 enum Error {
@@ -94,8 +131,8 @@ fn main() -> Result<(), Error> {
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
 	let (event_sender, event_receiver) = mpsc::channel();
-	let (mut player_sender, player_receiver) = mpsc::channel();
-	let (mut alphanum_sender, alphanum_receiver) = mpsc::channel();
+	let (player_sender, player_receiver) = mpsc::channel();
+	let (alphanum_sender, alphanum_receiver) = mpsc::channel();
 
 	// start thread to update buzzer
 	let _thread_buzzer = thread::spawn(move || update_buzzer(midi_note_receiver, buzzer));
@@ -124,29 +161,43 @@ fn main() -> Result<(), Error> {
 		.collect::<Vec<PathBuf>>();
 	midi_files.sort();
 
-	let mut state = State::Time;
+	let mut state_id = StateId::Clock;
 
 	loop {
-		println!("Entering state {:?}", state);
+		println!("Entering state {:?}", state_id);
 
-		let mut f = match state {
-			State::Time => state_time(&mut alphanum_sender),
-			State::ModeSelect => state_mode_select(&mut alphanum_sender),
-			State::TimeSet => state_time_set(&mut alphanum_sender),
-			State::AlarmTime => state_alarm_time_set(&mut alphanum_sender),
-			State::AlarmSong => state_alarm_song_set(&midi_files, &mut alphanum_sender, &mut player_sender),
-			State::Play => state_play(&midi_files, &mut alphanum_sender, &mut player_sender),
-			State::Bad => break,
+		let mut state: Box<dyn State> = match state_id {
+			StateId::Clock => Box::new(StateClock::new(alphanum_sender.clone())),
+			StateId::ModeSelect => Box::new(StateModeSelect::new(alphanum_sender.clone())),
+			StateId::ClockSet => Box::new(StateClockSet::new(alphanum_sender.clone())),
+			StateId::AlarmTime => Box::new(StateAlarmTimeSet::new(alphanum_sender.clone())),
+			StateId::AlarmSong => Box::new(StateAlarmSongSet::new(alphanum_sender.clone(), player_sender.clone(), midi_files.clone())),
+			StateId::Play => Box::new(StatePlay::new(alphanum_sender.clone(), player_sender.clone(), midi_files.clone())),
+			StateId::Bad => break,
 		};
 
-		state = loop {
+		state.init();
+
+		state_id = loop {
 			match event_receiver.recv() {
 				Ok(msg) => {
-					if let Some(next_state) = f(msg) {
+					match &msg {
+						EventMessage::Song(event) => match event {
+							SongEvent::Start(name) => {
+								println!("Now playing {:?}", name);
+							}
+							SongEvent::End(name) => {
+								println!("Stopped playing {:?}", name);
+							}
+						}
+						_ => (),
+					}
+
+					if let Some(next_state) = state.event(msg) {
 						break next_state;
 					}
 				}
-				Err(_) => break State::Bad,
+				Err(_) => break StateId::Bad,
 			}
 		}
 	}
