@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::note::MidiNote;
+use crate::circuit::BlinkRate;
 
 #[derive(Debug)]
 pub enum EventMessage {
@@ -47,7 +48,8 @@ pub enum PlayerMessage {
 #[derive(Debug)]
 pub enum AlphanumMessage {
 	Static([char; 4]),
-	Text(String),
+	Loop(String),
 	Time,
 	Empty,
+	Blink(BlinkRate),
 }

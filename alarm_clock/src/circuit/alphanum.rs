@@ -11,11 +11,23 @@ use rppal::i2c::I2c;
 
 pub struct Alphanum {
 	i2c: I2c,
+	ascii_uppercase: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum BlinkRate {
+	Off,
+	HalfHz,
+	OneHz,
+	TwoHz,
 }
 
 impl Alphanum {
 	pub fn new() -> rppal::i2c::Result<Self> {
-		let mut val = Self { i2c: I2c::new()? };
+		let mut val = Self {
+			i2c: I2c::new()?,
+			ascii_uppercase: false,
+		};
 
 		val.i2c.set_slave_address(0x70)?;
 
@@ -23,7 +35,7 @@ impl Alphanum {
 		val.i2c.write(&[0x21])?;
 
 		val.set_brightness(15)?;
-		val.blink_off()?;
+		val.blink_rate(BlinkRate::Off)?;
 
 		Ok(val)
 	}
@@ -32,19 +44,32 @@ impl Alphanum {
 		self.i2c.write(&[HT16K33_CMD_BRIGHTNESS | std::cmp::min(brightness, 15)])
 	}
 
-	pub fn blink_off(&mut self) -> rppal::i2c::Result<usize> {
-		self.blink_rate(HT16K33_BLINK_OFF)
+	pub fn blink_rate(&mut self, blink_rate: BlinkRate) -> rppal::i2c::Result<usize> {
+		let blink_rate = match blink_rate {
+			BlinkRate::Off => HT16K33_BLINK_OFF,
+			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
+			BlinkRate::OneHz => HT16K33_BLINK_1HZ,
+			BlinkRate::HalfHz => HT16K33_BLINK_HALFHZ,
+		};
+
+		self.i2c.write(&[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
 	}
 
-	fn blink_rate(&mut self, blink_rate: u8) -> rppal::i2c::Result<usize> {
-		self.i2c.write(&[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
+	pub fn ascii_uppercase(&mut self, ascii_uppercase: bool) {
+		self.ascii_uppercase = ascii_uppercase;
 	}
 
 	pub fn display(&mut self, chars: &[char; 4]) -> rppal::i2c::Result<usize> {
 		let mut bytes = [0_u8; 9];
 
 		for i in 0..4 {
-			let char_bytes = char_to_alphanum(chars[i]).to_le_bytes();
+			let mut c = chars[i];
+
+			if self.ascii_uppercase {
+				c = c.to_ascii_uppercase()
+			}
+
+			let char_bytes = char_to_alphanum(c).to_le_bytes();
 			bytes[i*2+1] = char_bytes[0];
 			bytes[i*2+2] = char_bytes[1];
 		}

@@ -7,4 +7,5 @@ pub struct Config {
 	pub midi_dir: String,
 	pub brightness: u8,
 	pub scroll_delay_ms: u64,
+	pub ascii_uppercase: bool,
 }

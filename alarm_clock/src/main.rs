@@ -127,6 +127,7 @@ fn main() -> Result<(), Error> {
 	// create alphanum controller
 	let mut alphanum = Alphanum::new()?;
 	alphanum.set_brightness(config.brightness)?;
+	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
@@ -199,7 +200,9 @@ fn main() -> Result<(), Error> {
 				}
 				Err(_) => break StateId::Bad,
 			}
-		}
+		};
+
+		state.finish();
 	}
 
 	//println!("{} updates per second", thread_buzzer.join().unwrap()?);

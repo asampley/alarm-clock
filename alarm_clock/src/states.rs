@@ -28,6 +28,8 @@ fn set_time(time: ClockTime) {
 pub trait State {
 	fn init(&mut self) {}
 
+	fn finish(&mut self) {}
+
 	fn event(&mut self, event: EventMessage) -> Option<StateId> {
 		match event {
 			EventMessage::Button(button) => match button {
@@ -69,11 +71,11 @@ pub enum StateId {
 	Bad,
 }
 
-impl fmt::Display for StateId {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl StateId {
+	fn as_str(&self) -> &'static str {
 		use StateId::*;
 
-		let name = match self {
+		match self {
 			Clock => "Clock",
 			ModeSelect => "Mode Select",
 			ClockSet => "Clock Set",
@@ -81,9 +83,13 @@ impl fmt::Display for StateId {
 			AlarmSong => "Alarm Song",
 			Play => "Play",
 			Bad => "Bad",
-		};
+		}
+	}
+}
 
-		write!(f, "{}", name)
+impl fmt::Display for StateId {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		write!(f, "{}", self.as_str())
 	}
 }
 
@@ -132,7 +138,7 @@ impl StateModeSelect {
 
 impl State for StateModeSelect {
 	fn init(&mut self) {
-		self.alphanum_sender.send(AlphanumMessage::Text(self.mode_selector.curr().to_string())).unwrap();
+		self.alphanum_sender.send(AlphanumMessage::Loop(self.mode_selector.curr().to_string())).unwrap();
 	}
 
 	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
@@ -144,7 +150,7 @@ impl State for StateModeSelect {
 					self.mode_selector.decr()
 				};
 
-				self.alphanum_sender.send(AlphanumMessage::Text(state.to_string())).unwrap();
+				self.alphanum_sender.send(AlphanumMessage::Loop(state.to_string())).unwrap();
 
 				None
 			}
@@ -294,14 +300,14 @@ impl State for StateAlarmSongSet {
 
 	fn song_start(&mut self, name: String) -> Option<StateId> {
 		println!("Now playing {:?}", name);
-		self.alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+		self.alphanum_sender.send(AlphanumMessage::Loop(name)).unwrap();
 
 		None
 	}
 
 	fn song_end(&mut self, name: String) -> Option<StateId> {
 		println!("Stopped playing {:?}", name);
-		self.alphanum_sender.send(AlphanumMessage::Text("Play".to_owned())).unwrap();
+		self.alphanum_sender.send(AlphanumMessage::Loop("Play".to_string())).unwrap();
 
 		None
 	}
@@ -354,14 +360,14 @@ impl State for StatePlay {
 
 	fn song_start(&mut self, name: String) -> Option<StateId> {
 		println!("Now playing {:?}", name);
-		self.alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
+		self.alphanum_sender.send(AlphanumMessage::Loop(name)).unwrap();
 
 		None
 	}
 
 	fn song_end(&mut self, name: String) -> Option<StateId> {
 		println!("Stopped playing {:?}", name);
-		self.alphanum_sender.send(AlphanumMessage::Text("Play".to_owned())).unwrap();
+		self.alphanum_sender.send(AlphanumMessage::Loop("Play".to_string())).unwrap();
 
 		None
 	}

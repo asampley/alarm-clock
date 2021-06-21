@@ -4,4 +4,4 @@ mod alphanum;
 
 pub use buzzer::Buzzer;
 pub use button::Button;
-pub use alphanum::Alphanum;
+pub use alphanum::{ Alphanum, BlinkRate };

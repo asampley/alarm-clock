@@ -32,7 +32,7 @@ pub fn alphanum_thread(
 					alphanum.display(&chars)?;
 					text_mode = TextMode::Static(chars);
 				}
-				AlphanumMessage::Text(t) => {
+				AlphanumMessage::Loop(t) => {
 					text = t + "    ";
 					text_mode = TextMode::Iter(text.chars().cycle());
 				}
@@ -42,6 +42,9 @@ pub fn alphanum_thread(
 				AlphanumMessage::Empty => {
 					text_mode = TextMode::Static(BLANKS);
 					alphanum.display(&BLANKS)?;
+				}
+				AlphanumMessage::Blink(blink_rate) => {
+					alphanum.blink_rate(blink_rate)?;
 				}
 			}
 			Err(_) => (),
