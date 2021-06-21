@@ -46,57 +46,71 @@ impl <T> Selector<T> for LinearSelector<T> {
 	}
 }
 
+enum Bound {
+	Single(usize),
+	Range(usize, usize)
+}
+
 pub struct BinarySelector<T> {
 	list: Vec<T>,
-	bound: (usize, usize),
+	bound: Bound,
 }
 
 impl <T> BinarySelector<T> {
 	pub fn new(list: Vec<T>) -> Self {
-		let bound = (0, list.len() - 1);
+		let bound = Bound::Range(0, list.len() - 1);
 		Self { list, bound }
 	}
 
 	fn curr_i(&self) -> usize {
-		self.bound.0 + (self.bound.1 - self.bound.0 + 1) / 2
+		match self.bound {
+			Bound::Single(i) => i,
+			Bound::Range(i, j) => i + (j - i + 1) / 2,
+		}
 	}
 }
 
 impl <T> Selector<T> for BinarySelector<T> {
 	fn incr(&mut self) -> &T {
-		if self.bound.0 == self.bound.1 {
-			self.bound.0 = (self.bound.1 + 1) % self.len();
-			self.bound.1 = self.bound.0;
-		} else {
-			self.bound.0 = self.curr_i() + 1;
+		self.bound = match self.bound {
+			Bound::Single(i) => Bound::Single((i + 1) % self.len()),
+			Bound::Range(_, j) => {
+				let new = self.curr_i() + 1;
 
-			if self.bound.0 >= self.len() {
-				self.bound.0 = 0;
-				self.bound.1 = 0;
+				if new >= j {
+					Bound::Single(new % self.len())
+				} else {
+					Bound::Range(new, j)
+				}
 			}
-		}
+		};
 
 		self.curr()
 	}
 
 	fn decr(&mut self) -> &T {
-		if self.bound.0 >= self.bound.1 {
-			self.bound.0 = min(self.len() - 1, self.bound.0.wrapping_sub(1));
-			self.bound.1 = self.bound.0;
-		} else {
-			self.bound.1 = min(self.len() - 1, self.curr_i().wrapping_sub(1));
-		}
+		self.bound = match self.bound {
+			Bound::Single(i) => Bound::Single(min(self.len() - 1, i.wrapping_sub(1))),
+			Bound::Range(i, _) => {
+				let new = min(self.len() - 1, self.curr_i().wrapping_sub(1));
+
+				if new <= i {
+					Bound::Single(new)
+				} else {
+					Bound::Range(i, new)
+				}
+			}
+		};
 
 		self.curr()
 	}
 
 	fn curr(&self) -> &T {
-		dbg!((self.bound, self.curr_i()));
 		&self.list[self.curr_i()]
 	}
 
 	fn reset(&mut self) {
-		self.bound = (0, self.list.len() - 1);
+		self.bound = Bound::Range(0, self.len() - 1);
 	}
 
 	fn len(&self) -> usize {

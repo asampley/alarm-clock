@@ -1,7 +1,7 @@
 use std::fs;
 use std::sync::mpsc;
 use std::sync::RwLock;
-use std::path::{Path, PathBuf};
+use std::path::{ Path, PathBuf };
 use std::thread;
 use std::time::{ Instant, Duration };
 
@@ -16,13 +16,22 @@ mod config;
 use config::Config;
 
 mod message;
-use message::{AlphanumMessage, PlayerMessage, EventMessage, ButtonEvent, SongEvent};
 
 mod note;
 use note::MidiNote;
 
 mod selector;
-use selector::{LinearSelector, Selector};
+
+mod states;
+use states::{
+	State,
+	state_time,
+	state_mode_select,
+	state_time_set,
+	state_alarm_time_set,
+	state_alarm_song_set,
+	state_play,
+};
 
 mod threads;
 use threads::input::poll_inputs;
@@ -85,8 +94,8 @@ fn main() -> Result<(), Error> {
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
 	let (event_sender, event_receiver) = mpsc::channel();
-	let (player_sender, player_receiver) = mpsc::channel();
-	let (alphanum_sender, alphanum_receiver) = mpsc::channel();
+	let (mut player_sender, player_receiver) = mpsc::channel();
+	let (mut alphanum_sender, alphanum_receiver) = mpsc::channel();
 
 	// start thread to update buzzer
 	let _thread_buzzer = thread::spawn(move || update_buzzer(midi_note_receiver, buzzer));
@@ -115,38 +124,30 @@ fn main() -> Result<(), Error> {
 		.collect::<Vec<PathBuf>>();
 	midi_files.sort();
 
-	let mut selector = LinearSelector::new(midi_files);
+	let mut state = State::Time;
 
 	loop {
-		match event_receiver.recv() {
-			Ok(msg) => match msg {
-				EventMessage::Button(button) => match button {
-					ButtonEvent::Press(x) => {
-						if x == 0 || x == 1 {
-							let midi_file = if x == 0 {
-								selector.incr()
-							} else {
-								selector.decr()
-							};
+		println!("Entering state {:?}", state);
 
-							player_sender.send(PlayerMessage::Play(midi_file.clone()))
-								.expect("Unable to send midi file name");
-						}
+		let mut f = match state {
+			State::Time => state_time(&mut alphanum_sender),
+			State::ModeSelect => state_mode_select(&mut alphanum_sender),
+			State::TimeSet => state_time_set(&mut alphanum_sender),
+			State::AlarmTime => state_alarm_time_set(&mut alphanum_sender),
+			State::AlarmSong => state_alarm_song_set(&midi_files, &mut alphanum_sender, &mut player_sender),
+			State::Play => state_play(&midi_files, &mut alphanum_sender, &mut player_sender),
+			State::Bad => break,
+		};
+
+		state = loop {
+			match event_receiver.recv() {
+				Ok(msg) => {
+					if let Some(next_state) = f(msg) {
+						break next_state;
 					}
-					ButtonEvent::Release(_) => (),
 				}
-				EventMessage::Song(song) => match song {
-					SongEvent::Start(name) => {
-						println!("Now playing {:?}", name);
-						alphanum_sender.send(AlphanumMessage::Text(name)).unwrap();
-					}
-					SongEvent::End(name) => {
-						println!("Stopped playing {:?}", name);
-						alphanum_sender.send(AlphanumMessage::Time).unwrap();
-					}
-				}
+				Err(_) => break State::Bad,
 			}
-			Err(_) => break,
 		}
 	}
 

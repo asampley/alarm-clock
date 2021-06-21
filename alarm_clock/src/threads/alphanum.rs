@@ -29,6 +29,7 @@ pub fn alphanum_thread(
 		match msg {
 			Ok(msg) => match msg {
 				AlphanumMessage::Static(chars) => {
+					alphanum.display(&chars)?;
 					text_mode = TextMode::Static(chars);
 				}
 				AlphanumMessage::Text(t) => {
