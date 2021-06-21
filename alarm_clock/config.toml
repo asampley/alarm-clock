@@ -5,4 +5,4 @@ midi_dir = "/home/pi/Programs/mus/midi/"
 
 brightness = 0
 scroll_delay_ms = 200
-ascii_uppercase = false
+ascii_uppercase = true
