@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::sync::mpsc;
 use std::time::{ Instant, Duration };
 
-use crate::TIME_ZERO;
+use crate::{ TIME_ZERO, CONFIG };
 
 use crate::circuit::Alphanum;
 use crate::message::AlphanumMessage;
@@ -18,13 +18,12 @@ enum TextMode<I: Iterator<Item = char>> {
 pub fn alphanum_thread(
 	mut alphanum: Alphanum,
 	receiver: mpsc::Receiver<AlphanumMessage>,
-	scroll_delay: Duration,
 ) -> rppal::i2c::Result<()> {
 	let mut text; // must keep text in scope to create an iterator
 	let mut text_mode = TextMode::Time;
 
 	loop {
-		let msg = receiver.recv_timeout(scroll_delay);
+		let msg = receiver.recv_timeout(Duration::from_millis(CONFIG.read().scroll_delay_ms));
 
 		match msg {
 			Ok(msg) => match msg {
@@ -52,7 +51,7 @@ pub fn alphanum_thread(
 
 		match text_mode {
 			TextMode::Time => {
-				let seconds = (Instant::now() - *TIME_ZERO.read().unwrap()).as_secs();
+				let seconds = (Instant::now() - *TIME_ZERO.read()).as_secs();
 				let minutes = (seconds / 60) % 60;
 				let hours = (seconds / 60 / 60) % 24;
 

@@ -1,12 +1,13 @@
 use std::convert::TryInto;
 use std::fs;
 use std::sync::mpsc;
-use std::sync::RwLock;
 use std::path::{ Path, PathBuf };
 use std::thread;
 use std::time::{ Instant, Duration };
 
 use once_cell::sync::Lazy;
+
+use parking_lot::RwLock;
 
 mod circuit;
 use circuit::Buzzer;
@@ -46,6 +47,16 @@ use threads::alphanum::alphanum_thread;
 
 static TIME_ZERO: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(Instant::now()));
 static ALARM_TIME: Lazy<RwLock<ClockTime>> = Lazy::new(|| RwLock::new(ClockTime::new(0)));
+static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
+	let config_file = "config.toml";
+
+	RwLock::new(
+		toml::from_str(
+			&fs::read_to_string(config_file)
+				.expect(&format!("Unable to read config file \"{}\"", config_file))
+		).expect("Unable to parse config file")
+	)
+});
 
 #[derive(Clone, Copy, Debug)]
 pub struct ClockTime {
@@ -99,35 +110,21 @@ impl From<rppal::i2c::Error> for Error {
 }
 
 fn main() -> Result<(), Error> {
-	let mut args = std::env::args();
-
-	// parse arguments
-	if 2 != args.len() {
-		eprintln!("Usage: {} CONFIG", args.next().unwrap());
-		return Ok(());
-	}
-
-	let args = args.collect::<Vec<_>>();
-
 	Lazy::force(&TIME_ZERO);
-
-	let config: Config = toml::from_str(
-			&fs::read_to_string(&args[1])
-				.expect(&format!("Unable to read config file \"{}\"", &args[1]))
-		).expect("Unable to parse config file");
+	Lazy::force(&CONFIG);
 
 	// create buzzer controller
-	let buzzer = Buzzer::<MidiNote>::new(config.buzzer_pin)?;
+	let buzzer = Buzzer::<MidiNote>::new(CONFIG.read().buzzer_pin())?;
 
 	// create button pollers
-	let buttons = config.button_pins.iter()
+	let buttons = CONFIG.read().button_pins().iter()
 		.map(|&p| Button::new(p).map_err(|e| e.into()))
 		.collect::<Result<Vec<_>, Error>>()?;
 
 	// create alphanum controller
 	let mut alphanum = Alphanum::new()?;
-	alphanum.set_brightness(config.brightness)?;
-	alphanum.ascii_uppercase(config.ascii_uppercase);
+	alphanum.set_brightness(CONFIG.read().brightness)?;
+	alphanum.ascii_uppercase(CONFIG.read().ascii_uppercase);
 
 	// create channels for messages
 	let (midi_note_sender, midi_note_receiver) = mpsc::channel();
@@ -150,15 +147,12 @@ fn main() -> Result<(), Error> {
 	);
 
 	// start display thread
-	let _thread_display = {
-		let scroll_delay = Duration::from_millis(config.scroll_delay_ms);
-		thread::spawn(move ||
-			alphanum_thread(alphanum, alphanum_receiver, scroll_delay)
-		)
-	};
+	let _thread_display = thread::spawn(move ||
+		alphanum_thread(alphanum, alphanum_receiver)
+	);
 
-	let mut midi_files = list_files(&config.midi_dir)
-		.expect(&format!("Unable to read the directory \"{:?}\"", config.midi_dir))
+	let mut midi_files = list_files(&CONFIG.read().midi_dir())
+		.expect(&format!("Unable to read the directory \"{:?}\"", CONFIG.read().midi_dir()))
 		.collect::<Vec<PathBuf>>();
 	midi_files.sort();
 

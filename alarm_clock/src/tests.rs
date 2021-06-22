@@ -1,11 +1,11 @@
 #![cfg(test)]
 
-use crate::MidiNote;
+use crate::{MidiNote, CONFIG};
 use crate::note::Note;
 use crate::circuit::{Buzzer};
 use crate::selector::{BinarySelector, LinearSelector, Selector};
 
-use std::{thread, time};
+use std::time;
 
 macro_rules! assert_delta {
 	($x:expr, $y:expr, $d:expr) => {
@@ -29,7 +29,7 @@ fn test_freqencies() {
 /// uses pin 12
 #[test] #[ignore]
 fn test_range() -> rppal::gpio::Result<()> {
-	let mut buzzer = Buzzer::new(12)?;
+	let mut buzzer = Buzzer::new(CONFIG.read().buzzer_pin())?;
 	let dur = time::Duration::from_millis(500);
 
 	for note in 60..72 {
@@ -101,7 +101,7 @@ fn test_binary_selector() {
 	}
 
 	for x in &[8, 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0] {
-		assert_eq!(selector_odd.incr(), x);
+		assert_eq!(dbg!(selector_odd.incr()), x);
 	}
 
 	// reset for next test

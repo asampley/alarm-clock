@@ -21,7 +21,7 @@ fn send_time(alphanum_sender: &mut Sender<AlphanumMessage>, time: ClockTime) {
 }
 
 fn set_time(time: ClockTime) {
-	*TIME_ZERO.write().unwrap() = Instant::now() - Duration::from(time)
+	*TIME_ZERO.write() = Instant::now() - Duration::from(time)
 }
 
 
@@ -243,7 +243,7 @@ impl State for StateAlarmTimeSet {
 				None
 			}
 			2 => {
-				*ALARM_TIME.write().unwrap() = *self.time_selector.curr();
+				*ALARM_TIME.write() = *self.time_selector.curr();
 
 				Some(StateId::Clock)
 			}
