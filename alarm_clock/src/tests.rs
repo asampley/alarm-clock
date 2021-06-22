@@ -1,11 +1,12 @@
 #![cfg(test)]
 
-use crate::{MidiNote, CONFIG};
-use crate::note::Note;
-use crate::circuit::{Buzzer};
-use crate::selector::{BinarySelector, LinearSelector, Selector};
-
+use std::convert::TryInto;
 use std::time;
+
+use crate::{ MidiNote, CONFIG };
+use crate::note::Note;
+use crate::circuit::{ Alphanum, Buzzer };
+use crate::selector::{ BinarySelector, LinearSelector, Selector };
 
 macro_rules! assert_delta {
 	($x:expr, $y:expr, $d:expr) => {
@@ -26,7 +27,6 @@ fn test_freqencies() {
 }
 
 /// qualitative test only
-/// uses pin 12
 #[test] #[ignore]
 fn test_range() -> rppal::gpio::Result<()> {
 	let mut buzzer = Buzzer::new(CONFIG.read().buzzer_pin())?;
@@ -41,6 +41,30 @@ fn test_range() -> rppal::gpio::Result<()> {
 		}
 
 		buzzer.remove_note(&MidiNote(note));
+	}
+
+	Ok(())
+}
+
+/// qualitative test only
+#[test] #[ignore]
+fn test_alphanum() -> rppal::i2c::Result<()> {
+	let mut alphanum = Alphanum::new()?;
+
+	let string = "    !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~    ";
+	let mut iter = string.chars();
+
+	loop {
+		let chars = iter.clone().take(4).collect::<Vec<_>>();
+
+		if chars.len() != 4 {
+			break;
+		}
+
+		alphanum.display(&chars.try_into().unwrap())?;
+		iter.next();
+
+		std::thread::sleep(time::Duration::from_millis(300));
 	}
 
 	Ok(())
