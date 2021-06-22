@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::Sender;
 use std::time::{ Duration, Instant };
 
-use crate::{ TIME_ZERO, ALARM_TIME, ClockTime };
+use crate::{ TIME_ZERO, ALARM_TIME, ALARM_SONG, ClockTime };
 
 use crate::selector::{ BinarySelector, LinearSelector, Selector };
 
@@ -95,11 +95,15 @@ impl fmt::Display for StateId {
 
 pub struct StateClock {
 	alphanum_sender: Sender<AlphanumMessage>,
+	player_sender: Sender<PlayerMessage>,
 }
 
 impl StateClock {
-	pub fn new(alphanum_sender: Sender<AlphanumMessage>) -> Self {
-		Self { alphanum_sender }
+	pub fn new(
+		alphanum_sender: Sender<AlphanumMessage>,
+		player_sender: Sender<PlayerMessage>,
+	) -> Self {
+		Self { alphanum_sender, player_sender }
 	}
 }
 
@@ -110,6 +114,12 @@ impl State for StateClock {
 
 	fn button_press(&mut self, button_id: u8) -> Option<StateId> {
 		match button_id {
+			0 | 1 => {
+				self.player_sender.send(PlayerMessage::Stop)
+					.expect("Unable to stop alarm");
+
+				None
+			}
 			2 => Some(StateId::ModeSelect),
 			_ => None,
 		}
@@ -243,7 +253,7 @@ impl State for StateAlarmTimeSet {
 				None
 			}
 			2 => {
-				*ALARM_TIME.write() = *self.time_selector.curr();
+				*ALARM_TIME.write() = Some(*self.time_selector.curr());
 
 				Some(StateId::Clock)
 			}
@@ -288,7 +298,8 @@ impl State for StateAlarmSongSet {
 				None
 			}
 			2 => {
-				// TODO set song
+				*ALARM_SONG.write() = Some(self.midi_selector.curr().clone());
+
 				self.player_sender.send(PlayerMessage::Stop)
 					.expect("Unable to stop currently playing");
 

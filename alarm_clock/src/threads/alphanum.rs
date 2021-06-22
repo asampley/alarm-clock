@@ -1,8 +1,8 @@
 use std::convert::TryInto;
 use std::sync::mpsc;
-use std::time::{ Instant, Duration };
+use std::time::Duration;
 
-use crate::{ TIME_ZERO, CONFIG };
+use crate::{ CONFIG, ClockTime };
 
 use crate::circuit::Alphanum;
 use crate::message::AlphanumMessage;
@@ -51,11 +51,9 @@ pub fn alphanum_thread(
 
 		match text_mode {
 			TextMode::Time => {
-				let seconds = (Instant::now() - *TIME_ZERO.read()).as_secs();
-				let minutes = (seconds / 60) % 60;
-				let hours = (seconds / 60 / 60) % 24;
+				let clock_time = ClockTime::now();
 
-				alphanum.display(&format!("{:02}{:02}", hours, minutes).chars().collect::<Vec<_>>().try_into().unwrap())?;
+				alphanum.display(&clock_time.as_chars())?;
 			}
 			TextMode::Static(_) => (),
 			TextMode::Iter(ref mut iter) => {

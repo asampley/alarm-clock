@@ -41,6 +41,7 @@ pub enum BuzzerMessage {
 
 #[derive(Debug)]
 pub enum PlayerMessage {
+	Loop(PathBuf),
 	Play(PathBuf),
 	Stop,
 }

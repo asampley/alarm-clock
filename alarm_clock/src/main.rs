@@ -42,11 +42,13 @@ use threads::input::poll_inputs;
 use threads::buzzer::update_buzzer;
 use threads::player::midi_player;
 use threads::alphanum::alphanum_thread;
+use threads::alarm::alarm_thread;
 
 #[cfg(test)] mod tests;
 
 static TIME_ZERO: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(Instant::now()));
-static ALARM_TIME: Lazy<RwLock<ClockTime>> = Lazy::new(|| RwLock::new(ClockTime::new(0)));
+static ALARM_TIME: Lazy<RwLock<Option<ClockTime>>> = Lazy::new(|| RwLock::new(None));
+static ALARM_SONG: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
 static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
 	let config_file = "config.toml";
 
@@ -58,7 +60,7 @@ static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
 	)
 });
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClockTime {
 	minutes: u16
 }
@@ -66,6 +68,10 @@ pub struct ClockTime {
 impl ClockTime {
 	pub fn new(minutes: u16) -> Self {
 		Self { minutes: minutes % (24 * 60) }
+	}
+
+	pub fn now() -> Self {
+		Self::new((((Instant::now() - *TIME_ZERO.read()).as_secs() / 60) % (24 * 60)) as u16)
 	}
 
 	pub fn hours(&self) -> u8 {
@@ -151,10 +157,21 @@ fn main() -> Result<(), Error> {
 		alphanum_thread(alphanum, alphanum_receiver)
 	);
 
+	// start alarm thread
+	let _alarm_thread = {
+		let player_sender = player_sender.clone();
+		thread::spawn(move ||
+			alarm_thread(player_sender)
+		)
+	};
+
 	let mut midi_files = list_files(&CONFIG.read().midi_dir())
 		.expect(&format!("Unable to read the directory \"{:?}\"", CONFIG.read().midi_dir()))
 		.collect::<Vec<PathBuf>>();
 	midi_files.sort();
+
+	// default initialize alarm song
+	*ALARM_SONG.write() = midi_files.first().cloned();
 
 	let mut state_id = StateId::Clock;
 
@@ -162,7 +179,7 @@ fn main() -> Result<(), Error> {
 		println!("Entering state {:?}", state_id);
 
 		let mut state: Box<dyn State> = match state_id {
-			StateId::Clock => Box::new(StateClock::new(alphanum_sender.clone())),
+			StateId::Clock => Box::new(StateClock::new(alphanum_sender.clone(), player_sender.clone())),
 			StateId::ModeSelect => Box::new(StateModeSelect::new(alphanum_sender.clone())),
 			StateId::ClockSet => Box::new(StateClockSet::new(alphanum_sender.clone())),
 			StateId::AlarmTime => Box::new(StateAlarmTimeSet::new(alphanum_sender.clone())),

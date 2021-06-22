@@ -21,14 +21,20 @@ pub fn midi_player(
 	event_sender: mpsc::Sender<EventMessage>,
 ) {
 	let mut playing_name = None;
+	let mut looping = false;
 
 	loop {
 		// stopped loop
 		while playing_name == None {
 			match player_receiver.recv() {
 				Ok(message) => match message {
+					PlayerMessage::Loop(name) => {
+						playing_name = Some(name);
+						looping = true;
+					}
 					PlayerMessage::Play(name) => {
 						playing_name = Some(name);
+						looping = false;
 					}
 					PlayerMessage::Stop => (),
 				}
@@ -74,16 +80,25 @@ pub fn midi_player(
 				// break out of loop when there are no more notes
 				if !events.iter_mut().any(|ev| ev.peek().is_some()) {
 					event_sender.send(SongEvent::End(song_name(some_name)).into()).unwrap();
-					playing_name = None;
+					if !looping {
+						playing_name = None;
+					}
 					break;
 				}
 
 				// break if any new messages are received
 				match player_receiver.try_recv() {
 					Ok(message) => match message {
+						PlayerMessage::Loop(name) => {
+							event_sender.send(SongEvent::End(song_name(some_name)).into()).unwrap();
+							playing_name = Some(name);
+							looping = true;
+							break;
+						}
 						PlayerMessage::Play(name) => {
 							event_sender.send(SongEvent::End(song_name(some_name)).into()).unwrap();
 							playing_name = Some(name);
+							looping = false;
 							break;
 						}
 						PlayerMessage::Stop => {
