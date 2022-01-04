@@ -5,6 +5,8 @@ use std::path::{ Path, PathBuf };
 use std::thread;
 use std::time::{ Instant, Duration };
 
+use chrono::{NaiveTime, offset::Local};
+
 use once_cell::sync::Lazy;
 
 use parking_lot::RwLock;
@@ -46,7 +48,9 @@ use threads::alarm::alarm_thread;
 
 #[cfg(test)] mod tests;
 
-static TIME_ZERO: Lazy<RwLock<Instant>> = Lazy::new(|| RwLock::new(Instant::now()));
+static TIME_ZERO: Lazy<RwLock<Instant>> = Lazy::new(|| {
+	RwLock::new(Instant::now() - (Local::now().time() - NaiveTime::from_hms(0, 0, 0)).to_std().unwrap_or(Duration::ZERO))
+});
 static ALARM_TIME: Lazy<RwLock<Option<ClockTime>>> = Lazy::new(|| RwLock::new(None));
 static ALARM_SONG: Lazy<RwLock<Option<PathBuf>>> = Lazy::new(|| RwLock::new(None));
 static CONFIG: Lazy<RwLock<Config>> = Lazy::new(|| {
