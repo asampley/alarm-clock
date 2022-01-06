@@ -1,8 +1,22 @@
+# gpio number of pin to drive the buzzer.
 buzzer_pin = 12
+# gpio numbers of pins to read the buttons. The order is "down", "up", "mode".
 button_pins = [ 5, 6, 13 ]
 
+# directory of midi music available to play.
 midi_dir = "/home/pi/Programs/mus/midi/"
 
+# time to wait between detecting button press/release events to prevent bouncing.
+button_bounce_ms = 200
+
+# brightness of the display from 0 to 15 inclusive.
 brightness = 7
+# time for text to shift one character along the display when looping.
 scroll_delay_ms = 250
+# If true, all text will display uppercase. False displays text as is.
 ascii_uppercase = true
+
+# Offset to begin displaying looping text. All text has four spaces appended to it.
+# Negative values will count backwards from the end of the text.
+# E.g. a value of -3 would start with 3 spaces at the end of the text, followed by the first letter.
+text_offset = -2

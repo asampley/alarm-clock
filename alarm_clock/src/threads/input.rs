@@ -4,6 +4,7 @@ use std::time::{ Duration, Instant };
 
 use rppal::gpio::{ Gpio, Level };
 
+use crate::CONFIG;
 use crate::circuit::Button;
 use crate::message::{ EventMessage, ButtonEvent };
 
@@ -16,7 +17,7 @@ struct Input {
 impl Input {
 	fn new(input_type: InputType) -> Self {
 		let bounce_time = match input_type {
-			InputType::Button(_) => Duration::from_millis(200),
+			InputType::Button(_) => Duration::from_millis(CONFIG.read().button_bounce_ms()),
 		};
 
 		Self { input_type, bounce_time, last_event: None }
@@ -33,7 +34,7 @@ pub fn poll_inputs(
 ) -> rppal::gpio::Result<()> {
 	let gpio = Gpio::new()?;
 
-	let inputs: BTreeMap<_,_> = buttons.iter()
+	let mut inputs: BTreeMap<_,_> = buttons.iter()
 		.enumerate()
 		.map(|(i, button)| (
 			button.input_pin().pin(),
@@ -46,15 +47,17 @@ pub fn poll_inputs(
 
 	loop {
 		if let Some((pin, level)) = gpio.poll_interrupts(&pins, false, None)? {
-			let input = inputs.get(&pin.pin()).unwrap();
+			let mut input = inputs.get_mut(&pin.pin()).unwrap();
 
-			if input.last_event.map_or(true, |e| e + input.bounce_time >= Instant::now()) {
+			if input.last_event.map_or(true, |e| e + input.bounce_time <= Instant::now()) {
 				match (&input.input_type, level) {
 					(InputType::Button(i), Level::High)
-						=> event_sender.send(ButtonEvent::Press(*i).into()),
-					(InputType::Button(i), Level::Low)
 						=> event_sender.send(ButtonEvent::Release(*i).into()),
+					(InputType::Button(i), Level::Low)
+						=> event_sender.send(ButtonEvent::Press(*i).into()),
 				}.unwrap();
+
+				input.last_event = Some(Instant::now());
 			}
 		}
 	}

@@ -33,7 +33,10 @@ pub fn alphanum_thread(
 				}
 				AlphanumMessage::Loop(t) => {
 					text = t + "    ";
-					text_mode = TextMode::Iter(text.chars().cycle());
+					let offset = CONFIG.read().text_offset.rem_euclid(
+						text.len().try_into().unwrap_or(i8::MAX)
+					).try_into().unwrap();
+					text_mode = TextMode::Iter(text.chars().cycle().skip(offset));
 				}
 				AlphanumMessage::Time => {
 					text_mode = TextMode::Time;
