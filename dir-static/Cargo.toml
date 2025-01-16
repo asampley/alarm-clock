@@ -1,0 +1,7 @@
+[package]
+name = "dir-static"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dir-static-macro = { path = "../dir-static-macro/" }
