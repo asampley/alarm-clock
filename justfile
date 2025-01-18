@@ -6,11 +6,11 @@ help:
 clean:
 	cargo clean
 
-build:
-	cargo build --release
+build *params:
+	cargo build --release {{params}}
 
-run: build
-	cargo run --release
+run *params: (build params)
+	cargo run --release {{params}}
 
 install-tools: install-rust-esp install-probe-rs
 

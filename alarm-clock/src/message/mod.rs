@@ -50,7 +50,7 @@ impl From<ButtonEvent> for EventMessage {
 #[derive(Debug)]
 pub enum BuzzerMessage {
 	Clear,
-	Note { on: bool, note: MidiNote },
+	Note(MidiNote),
 }
 
 #[derive(Debug)]

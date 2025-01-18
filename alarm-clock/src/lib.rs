@@ -1,9 +1,10 @@
 #![no_std]
+#![feature(impl_trait_in_assoc_type)]
 
 use defmt_rtt as _;
 use esp_backtrace as _;
 
-pub use defmt::{error, info, trace};
+pub use defmt::{error, info, trace, warn};
 
 use embassy_executor::{SpawnError, Spawner};
 
@@ -15,6 +16,7 @@ use embassy_time::Duration;
 use esp_hal::gpio::Pin;
 
 use message::{ButtonFunction, ButtonDirection};
+use synth::Synth;
 use thiserror::Error;
 
 pub mod borrow;
@@ -22,8 +24,8 @@ pub mod borrow;
 pub mod circuit;
 use circuit::hal::{Alphanum, Button, Buzzer};
 
-pub mod config;
-use config::Config;
+pub mod tweaks;
+use tweaks::Config;
 
 pub mod message;
 use message::{AlphanumMessage, BuzzerMessage, EventMessage, PlayerMessage, SongEvent};
@@ -35,6 +37,8 @@ use midi_dir::MIDI_DIR;
 pub mod note;
 
 pub mod selector;
+
+pub mod synth;
 
 pub mod states;
 use states::{
@@ -60,7 +64,7 @@ type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawM
 static ALARM_TIME: Watch<ClockTime, 1> = Watch::new();
 static ALARM_SONG: Mutex<Midi> = Mutex::new(MIDI_DIR[0]);
 static CONFIG: LazyLock<Config> = LazyLock::new(|| {
-	serde_json_core::from_str(include_str!("config.json"))
+	serde_json_core::from_str(include_str!("../tweaks.json"))
 		.unwrap()
 		.0
 });
@@ -93,7 +97,7 @@ impl From<esp_hal::i2c::master::Error> for Error {
 }
 
 pub async fn startup(spawner: Spawner) -> Result<(), Error> {
-	CONFIG.get();
+	let config = CONFIG.get();
 
 	let p = esp_hal::init({
 		let mut config = esp_hal::Config::default();
@@ -107,9 +111,16 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	esp_hal_embassy::init(timer0.alarm0);
 
 	// create buzzer controller
-	let buzzer = Buzzer::from(p.GPIO14.degrade());
+	let buzzer = Buzzer::from((
+		p.GPIO14.degrade(),
+		Synth::new(
+			config.synth_sustain_ratio,
+			config.synth_decay_constant,
+			config.synth_release_decay_constant,
+		),
+	));
 
-	let button_bounce_time = Duration::from_millis(CONFIG.get().button_bounce_ms());
+	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
 
 	// create button pollers
 	let buttons = [
@@ -123,9 +134,9 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	// create alphanum controller
 	let mut alphanum = Alphanum::new_esp_hal(p.I2C0.into(), p.GPIO11.into(), p.GPIO12.into())?;
 	alphanum
-		.set_brightness(CONFIG.get().brightness)
+		.set_brightness(config.brightness)
 		.await?;
-	alphanum.ascii_uppercase(CONFIG.get().ascii_uppercase);
+	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	// start task to update buzzer
 	spawner.spawn(update_buzzer(MIDI_NOTE_CHANNEL.receiver(), buzzer))?;

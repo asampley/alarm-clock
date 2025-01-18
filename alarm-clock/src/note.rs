@@ -1,11 +1,20 @@
-#[pre_table::freq_table]
-const F: [f64; 256];
+use midly::num::u7;
 
-#[derive(PartialEq, Eq, Hash, Debug)]
-pub struct MidiNote(pub i8);
+#[pre_table::freq_table]
+static F: [f64; 128];
+
+#[derive(Debug)]
+pub struct MidiNote {
+	pub key: u7,
+	pub vel: u7,
+}
 
 impl MidiNote {
-	pub const fn frequency(&self) -> f64 {
-		F[(self.0 as u8) as usize]
+	pub fn frequency(&self) -> f64 {
+		F[(self.key.as_int()) as usize]
+	}
+
+	pub fn on(&self) -> bool {
+		self.vel > 0
 	}
 }

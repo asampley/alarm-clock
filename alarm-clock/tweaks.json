@@ -1,0 +1,11 @@
+{
+	"button_bounce_ms": 200,
+
+	"brightness": 7,
+	"scroll_delay_ms": 250,
+	"ascii_uppercase": true,
+
+	"synth_sustain_ratio": 0.1,
+	"synth_decay_constant": 4.0,
+	"synth_release_decay_constant": 8.0
+}
