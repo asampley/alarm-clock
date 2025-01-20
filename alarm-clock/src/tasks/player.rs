@@ -1,4 +1,3 @@
-use core::iter::{Peekable, Flatten};
 use core::pin::{Pin, pin};
 use core::task::{Poll, Context};
 use core::future::Future;
@@ -7,18 +6,14 @@ use crate::{error, info, warn, MIDI_NOTE_CAPACITY};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Duration, Instant};
 use futures::{Stream, StreamExt};
-use heapless::Vec;
-use sized_dst::Dst;
+use heapless::{Vec, BinaryHeap, binary_heap::Min};
 
-use crate::message::{BuzzerMessage, EventMessage, PlayerMessage, SongEvent};
-
-use crate::note::MidiNote;
+use crate::message::{SynthMessage, EventMessage, PlayerMessage, SongEvent};
 
 use embassy_sync::channel::{Receiver, Sender};
 use embassy_time::Timer;
 
-use midly::{MetaMessage, Format, TrackEvent, TrackIter};
-use midly::MidiMessage;
+use midly::{MetaMessage, Format, TrackEvent};
 use midly::Timing;
 use midly::TrackEventKind;
 
@@ -27,7 +22,7 @@ const TRACK_CAPCITY: usize = 64;
 #[embassy_executor::task]
 pub async fn midi_player(
 	player_receiver: Receiver<'static, CriticalSectionRawMutex, PlayerMessage, 1>,
-	note_sender: Sender<'static, CriticalSectionRawMutex, BuzzerMessage, MIDI_NOTE_CAPACITY>,
+	note_sender: Sender<'static, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
 	event_sender: Sender<'static, CriticalSectionRawMutex, EventMessage, 1>,
 ) {
 	let mut playing = None;
@@ -51,10 +46,6 @@ pub async fn midi_player(
 
 		// playing
 		if let Some(ref now_playing) = playing {
-			event_sender
-				.send(SongEvent::Start(now_playing.name).into())
-				.await;
-
 			// load file and set initial variables
 			let (header, tracks) =
 				midly::parse(&now_playing.data).expect("Unable to parse midi file");
@@ -66,13 +57,7 @@ pub async fn midi_player(
 				panic!("Currently only supports metrical time")
 			};
 
-			type DynEventIter<'a> = dyn Iterator<Item = Result<TrackEvent<'a>, midly::Error>>;
-			const DYN_EVENT_ITER_MAX_BYTES: usize = core::mem::size_of::<Flatten<TrackIter>>();
-
-			let mut events = Vec::<Peekable<Dst<DynEventIter, DYN_EVENT_ITER_MAX_BYTES>>, TRACK_CAPCITY>::new();
-			let mut next_times = Vec::<_, TRACK_CAPCITY>::new();
-			let now = Instant::now();
-
+			let mut events = Vec::<_, TRACK_CAPCITY>::new();
 			let received_message = pin!(async {
 				match player_receiver.receive().await {
 					PlayerMessage::Loop(midi) => {
@@ -87,97 +72,96 @@ pub async fn midi_player(
 				}
 			});
 
-			let send_stream: SendTimedEventStream<_, TRACK_CAPCITY> = match header.format {
-				Format::Parallel => {
+			match header.format {
+				Format::SingleTrack | Format::Parallel => {
 					for track in tracks {
 						match track {
 							Err(e) => error!("Error while reading tracks: {:?}", defmt::Debug2Format(&e)),
 							Ok(event_iter) => {
-								let mut events_i = Dst::<DynEventIter, DYN_EVENT_ITER_MAX_BYTES>::new(event_iter).peekable();
-
-								let next_time_us = match events_i.peek() {
-									Some(Ok(ev)) => {
-										delta_to_micros(ticks_per_beat, tempo, ev.delta.as_int())
-									}
-									_ => 0,
-								};
-
-								if let Err(_) = events.push(events_i) {
+								if let Err(_) = events.push(event_iter) {
 									warn!("Midi events buffer full, skipping");
 									break;
 								}
-
-								// fine to unwrap because next_times is the same length as events
-								next_times.push(now + Duration::from_micros(next_time_us)).unwrap()
 							}
 						}
 					}
 
 					info!("Loaded midi file with {} tracks", events.len());
 
-					SendTimedEventStream::new(
+					let send_stream = SendTimedEventStream::new(
 						events,
 						tempo,
 						ticks_per_beat,
 						note_sender
-					)
-				}
-				Format::SingleTrack | Format::Sequential => {
-					let events_0 = Dst::<DynEventIter, DYN_EVENT_ITER_MAX_BYTES>::new(
-						tracks
-							.filter_map(|f| {
-								f.inspect_err(|e| {
-									error!("Error while reading tracks: {:?}", defmt::Debug2Format(e))
-								})
-								.ok()
-							})
-							.flatten()
-					).peekable();
+					);
 
-					if let Err(_) = events.push(events_0) {
-						warn!("Midi events buffer full, skipping");
-						break;
+					let mut send_until = send_stream.take_until(received_message);
+
+					event_sender
+						.send(SongEvent::Start(now_playing.name).into())
+						.await;
+
+					send_until.by_ref().collect::<()>().await;
+
+					event_sender
+						.send(SongEvent::End(now_playing.name).into())
+						.await;
+
+					if let Some(res) = send_until.take_result() {
+						(playing, looping) = res;
+					} else {
+						if !looping {
+							playing = None;
+						}
 					}
-
-					SendTimedEventStream::new(
-						events,
-						tempo,
-						ticks_per_beat,
-						note_sender
-					)
+				}
+				Format::Sequential => {
+					error!("Honestly, you're better off converting this to Single Track or splitting it into multiple files");
 				}
 			};
-
-			let mut send_until = send_stream.take_until(received_message);
-
-			send_until.by_ref().collect::<()>().await;
-
-			event_sender
-				.send(SongEvent::End(now_playing.name).into())
-				.await;
-
-			if let Some(res) = send_until.take_result() {
-				(playing, looping) = res;
-			} else {
-				if !looping {
-					playing = None;
-				}
-			}
 		}
 
-		note_sender.send(BuzzerMessage::Clear).await;
+		note_sender.send(SynthMessage::Clear).await;
 	}
+}
+
+#[derive(Debug)]
+pub struct OrderedEvent<'a> {
+	ticks: u32,
+	track: usize,
+	kind: TrackEventKind<'a>,
+}
+
+impl PartialEq for OrderedEvent<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ticks.eq(&other.ticks)
+    }
+}
+
+impl Eq for OrderedEvent<'_> {}
+
+impl PartialOrd for OrderedEvent<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
+		Some(self.cmp(&other))
+    }
+}
+
+impl Ord for OrderedEvent<'_> {
+    fn cmp(&self, other: &Self) -> core::cmp::Ordering {
+        self.ticks.cmp(&other.ticks)
+    }
 }
 
 pub struct SendTimedEventStream<'a, I, const N: usize>
 where
 	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>>,
 {
-	events: Vec<Peekable<I>, N>,
+	events: Vec<I, N>,
 	tempo: u32,
 	ticks_per_beat: u16,
-	next_times: Vec<Instant, N>,
-	note_sender: Sender<'a, CriticalSectionRawMutex, BuzzerMessage, MIDI_NOTE_CAPACITY>,
+	last_instant: Instant,
+	next_events: BinaryHeap<OrderedEvent<'a>, Min, N>,
+	note_sender: Sender<'a, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
 }
 
 impl<'a, I, const N: usize> SendTimedEventStream<'a, I, N>
@@ -185,22 +169,23 @@ where
 	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>>,
 {
 	fn new(
-		mut events: Vec<Peekable<I>, N>,
+		mut events: Vec<I, N>,
 		tempo: u32,
 		ticks_per_beat: u16,
-		note_sender: Sender<'a, CriticalSectionRawMutex, BuzzerMessage, MIDI_NOTE_CAPACITY>,
+		note_sender: Sender<'a, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
 	) -> Self {
-		let now = Instant::now();
+		let last_instant = Instant::now();
 
-		let next_times = events.iter_mut().map(|e_i| match e_i.peek() {
-			Some(Ok(ev)) => {
-				now + Duration::from_micros(delta_to_micros(ticks_per_beat, tempo, ev.delta.as_int()))
+		let mut next_events: BinaryHeap<_, _, N> = Default::default();
+
+		for (t_i, track_events) in events.iter_mut().enumerate() {
+			match track_events.next() {
+				Some(Ok(ev)) => next_events.push(OrderedEvent { ticks: ev.delta.into(), kind: ev.kind, track: t_i }).unwrap(),
+				_ => (),
 			}
-			_ => now,
-		})
-		.collect();
+		}
 
-		Self { events, tempo, ticks_per_beat, next_times, note_sender }
+		Self { events, tempo, ticks_per_beat, last_instant, next_events, note_sender }
 	}
 }
 
@@ -220,78 +205,71 @@ where
 		cx: &mut Context<'_>,
 	) -> Poll<Option<Self::Item>> {
 		pin!(async {
+			// get the elapsed time since the last check
+			let mut elapsed = Instant::now() - self.last_instant;
+
+			loop {
+				let Some(next_event) = self.next_events.peek() else { break };
+
+				// see if the next event should happen
+				let micros_until_next = ticks_to_duration(self.ticks_per_beat, self.tempo, next_event.ticks);
+
+				if micros_until_next > elapsed {
+					break;
+				}
+
+				let event = self.next_events.pop().unwrap();
+
+				// in case the next event involves timing, we must adjust all expectations
+				// based on the current tempo before it changes.
+				elapsed -= micros_until_next;
+				self.last_instant += micros_until_next;
+
+				// this doesn't mess up the heap because everything is decremented by the same
+				// amount
+				self.next_events.iter_mut().for_each(|nev| nev.ticks -= event.ticks);
+
+				// now that everything has been adjusted to lose the ticks of the current
+				// event, add the next event in the track
+				match self.events[event.track].next() {
+					Some(Ok(next)) => { self.next_events.push(OrderedEvent { ticks: next.delta.into(), track: event.track, kind: next.kind }).unwrap(); },
+					Some(Err(_)) => {
+						warn!("Error while reading midi note from track {}", event.track);
+					}
+					None => (),
+				};
+
+				match event.kind {
+					TrackEventKind::Midi {
+						channel,
+						message,
+					} => {
+						self.note_sender.send(SynthMessage::Midi { channel, message }).await;
+					}
+					TrackEventKind::Meta(MetaMessage::Tempo(new_tempo)) => {
+						self.tempo = new_tempo.as_int();
+					}
+					_ => (),
+				};
+			}
+
 			// break out of loop when there are no more notes
-			if !self.as_mut().events.iter_mut().any(|ev| ev.peek().is_some()) {
-				return None;
-			}
+			match self.next_events.peek() {
+				Some(next_event) => {
+					Timer::after(ticks_to_duration(self.ticks_per_beat, self.tempo, next_event.ticks)).await;
 
-			for ti in 0..self.events.len() {
-				if self.events[ti].peek().is_none() {
-					continue;
+					Some(())
 				}
-
-				while self.next_times[ti] <= Instant::now() {
-					let event = match self.events[ti].next() {
-						Some(Ok(event)) => event,
-						Some(Err(_)) => {
-							warn!("Error while reading midi note from track {}", ti);
-							break;
-						}
-						None => break,
-					};
-
-					match event.kind {
-						TrackEventKind::Midi {
-							channel: _,
-							message,
-						} => {
-							if let Some(note) = midi_to_buzzer(message) {
-								self.note_sender.send(BuzzerMessage::Note(note)).await;
-							}
-						}
-						TrackEventKind::Meta(MetaMessage::Tempo(new_tempo)) => {
-							self.tempo = new_tempo.as_int()
-						}
-						_ => (),
-					};
-
-					let ticks_per_beat = self.ticks_per_beat;
-					let tempo = self.tempo;
-
-					if let Some(Ok(next_event)) = self.events[ti].peek() {
-						let increment = Duration::from_micros(delta_to_micros(
-							ticks_per_beat,
-							tempo,
-							next_event.delta.as_int(),
-						));
-
-						self.next_times[ti] += increment;
-					};
-				}
+				None => None,
 			}
-
-			Timer::at(*self.next_times.iter().min().unwrap()).await;
-
-			Some(())
 		}).poll(cx)
 	}
 }
 
-fn delta_to_micros(ticks_per_beat: u16, tempo: u32, delta: u32) -> u64 {
-	tempo as u64 * delta as u64 / ticks_per_beat as u64
+fn ticks_to_micros(ticks_per_beat: u16, tempo: u32, ticks: u32) -> u64 {
+	tempo as u64 * ticks as u64 / ticks_per_beat as u64
 }
 
-fn midi_to_buzzer(msg: MidiMessage) -> Option<MidiNote> {
-	match msg {
-		MidiMessage::NoteOff { key, .. } => {
-			Some(MidiNote { key, vel: 0.into() })
-		}
-		MidiMessage::NoteOn { key, vel } => {
-			Some(MidiNote { key, vel })
-		}
-		MidiMessage::Aftertouch { key, vel } => {
-			Some(MidiNote { key, vel })
-		}
-		_ => None,
-	}
+fn ticks_to_duration(ticks_per_beat: u16, tempo: u32, ticks: u32) -> Duration {
+	Duration::from_micros(ticks_to_micros(ticks_per_beat, tempo, ticks))
 }

@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use crate::synth::SynthConfig;
+
 #[derive(Deserialize)]
 pub struct Config {
 	pub button_bounce_ms: u64,
@@ -8,7 +10,5 @@ pub struct Config {
 	pub scroll_delay_ms: u64,
 	pub ascii_uppercase: bool,
 
-	pub synth_sustain_ratio: f64,
-	pub synth_decay_constant: f64,
-	pub synth_release_decay_constant: f64
+	pub synth_config: SynthConfig,
 }

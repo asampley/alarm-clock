@@ -2,9 +2,8 @@ use core::cmp::min;
 
 use embassy_time::{Instant, Duration};
 use heapless::FnvIndexMap;
-use midly::num::u7;
-
-use crate::note::MidiNote;
+use midly::{num::{u4, u7}, MidiMessage};
+use serde::Deserialize;
 
 /// Chosen because humans should be able to hear at most a 19kHz, or 1/52us
 ///
@@ -12,20 +11,58 @@ use crate::note::MidiNote;
 const MAX_NOTE_HALF_DELAY_US: u64 = 30;
 const TICK_S: f64 = 1.0 / embassy_time::TICK_HZ as f64;
 
-pub struct Synth<const NOTES: usize> {
+fn frequency(key: u7) -> f64 {
+	#[pre_table::freq_table]
+	static F: [f64; 128];
+
+	F[usize::from(key.as_int())]
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SynthConfig {
+	pluck: InstrumentConfig,
+	hold: InstrumentConfig,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct InstrumentConfig {
 	sustain_ratio: f64,
 	decay_constant: f64,
 	release_decay_constant: f64,
-	notes: FnvIndexMap<u7, (Sound, Instant), NOTES>,
+}
+
+pub struct Synth<const NOTES: usize> {
+	instruments: [u7; 16],
+	notes: FnvIndexMap<SoundKey, (Sound, Instant), NOTES>,
+
+	config: SynthConfig,
+}
+
+impl SynthConfig {
+	fn instrument_config(&self, instrument: u7) -> &InstrumentConfig {
+		match instrument.as_int() {
+			0..=16 | 25..=40 | 105..=109 | 113..=121 | 123..=125 | 128 => {
+				&self.pluck
+			}
+			17..=24 | 41..=104 | 110..=112 | 122 | 126..=127 => {
+				&self.hold
+			}
+			128.. => unreachable!(),
+		}
+	}
 }
 
 impl<const NOTES: usize> Synth<NOTES> {
-	pub fn new(sustain_ratio: f64, decay_constant: f64, release_decay_constant: f64) -> Self {
+	pub fn new(mut config: SynthConfig) -> Self {
+		config.pluck.decay_constant *= TICK_S;
+		config.pluck.release_decay_constant *= TICK_S;
+		config.hold.decay_constant *= TICK_S;
+		config.hold.release_decay_constant *= TICK_S;
+
 		Self {
-			sustain_ratio,
-			decay_constant: decay_constant * TICK_S,
-			release_decay_constant: release_decay_constant * TICK_S,
+			instruments: [0.into(); 16],
 			notes: Default::default(),
+			config,
 		}
 	}
 
@@ -33,27 +70,60 @@ impl<const NOTES: usize> Synth<NOTES> {
 		self.notes.is_empty()
 	}
 
-	pub fn add_note(&mut self, note: MidiNote) -> Result<(), ()> {
+	pub fn process_midi(&mut self, channel: u4, message: MidiMessage) -> Result<(), ()> {
+		const ZERO: u7 = u7::new(0);
+
+		Ok(match message {
+			MidiMessage::NoteOff { key, .. } | MidiMessage::NoteOn { key, vel: ZERO } => {
+				self.release_note(&SoundKey { channel, key })
+			}
+			MidiMessage::NoteOn { key, vel } | MidiMessage::Aftertouch { key, vel } => {
+				self.add_note(SoundKey { channel, key }, vel)?
+			}
+			MidiMessage::Controller { controller, value } => {
+				self.process_controller(channel, controller, value)
+			}
+			MidiMessage::ProgramChange { program } => {
+				self.instruments[usize::from(channel.as_int())] = program
+			},
+			_ => (),
+		})
+	}
+
+	fn process_controller(&mut self, _channel: u4, controller: u7, _value: u7) {
+		const CONTROLLER_ALL_NOTES_OFF: u7 = u7::new(127);
+
+		match controller {
+			CONTROLLER_ALL_NOTES_OFF => self.stop(),
+			_ => (),
+		}
+	}
+
+	fn add_note(&mut self, sound_key: SoundKey, vel: u7) -> Result<(), ()> {
 		let on_period_ticks = MAX_NOTE_HALF_DELAY_US as f64
-				* note.vel.as_int() as f64
+				* vel.as_int() as f64
 				/ u7::max_value().as_int() as f64;
 
+		let instrument = self.instruments[usize::from(sound_key.channel.as_int())];
+
 		let sound = Sound {
-			period: Duration::from_micros((1_000_000.0 / note.frequency()) as u64),
+			instrument,
+			period: Duration::from_micros((1_000_000.0 / frequency(sound_key.key)) as u64),
 			amplitude: Amplitude::Decay {
 				on_period_ticks,
-				sustain_transition: on_period_ticks * self.sustain_ratio,
+				sustain_transition: on_period_ticks * self.config.instrument_config(instrument).sustain_ratio,
 			}
 		};
 
-		self.notes.insert(note.key, (sound, Instant::now())).map(|_| ()).map_err(|_| ())
+		self.notes.insert(sound_key, (sound, Instant::now())).map(|_| ()).map_err(|_| ())
 	}
 
-	pub fn release_note(&mut self, note: &MidiNote) {
-		self.notes.get_mut(&note.key).map(|(s, _)| s.amplitude.release());
+	fn release_note(&mut self, sound_key: &SoundKey) {
+		self.notes.get_mut(sound_key).map(|(s, _)| s.amplitude.release());
 	}
 
 	pub fn stop(&mut self) {
+		self.instruments = [0.into(); 16];
 		self.notes.clear()
 	}
 
@@ -64,12 +134,14 @@ impl<const NOTES: usize> Synth<NOTES> {
 		let mut on_period = None;
 
 		for (_, (ref mut sound, since_play)) in &mut self.notes {
+			let instrument_config = self.config.instrument_config(sound.instrument);
+
 			let t = *since_play + sound.period;
 
 			if t < now {
 				sound.amplitude.evolve(
-					self.decay_constant,
-					self.release_decay_constant,
+					instrument_config.decay_constant,
+					instrument_config.release_decay_constant,
 					sound.period
 				);
 
@@ -88,6 +160,12 @@ impl<const NOTES: usize> Synth<NOTES> {
 	}
 }
 
+#[derive(Copy, Clone, Eq, Hash, PartialEq)]
+struct SoundKey {
+	channel: u4,
+	key: u7,
+}
+
 #[derive(Debug)]
 pub struct Pulse {
 	pub on: Duration,
@@ -96,6 +174,7 @@ pub struct Pulse {
 
 #[derive(Debug)]
 struct Sound {
+	instrument: u7,
 	period: Duration,
 	amplitude: Amplitude,
 }

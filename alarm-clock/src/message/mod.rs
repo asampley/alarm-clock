@@ -1,9 +1,10 @@
 use heapless::String;
+use midly::MidiMessage;
+use midly::num::u4;
 
 use crate::borrow::Calf;
 use crate::circuit::alphanum::BlinkRate;
 use crate::midi_dir::Midi;
-use crate::note::MidiNote;
 
 #[derive(Debug)]
 pub enum EventMessage {
@@ -48,9 +49,12 @@ impl From<ButtonEvent> for EventMessage {
 }
 
 #[derive(Debug)]
-pub enum BuzzerMessage {
+pub enum SynthMessage {
+	Midi {
+		channel: u4,
+		message: MidiMessage,
+	},
 	Clear,
-	Note(MidiNote),
 }
 
 #[derive(Debug)]

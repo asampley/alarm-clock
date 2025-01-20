@@ -1,4 +1,4 @@
-use crate::{note::MidiNote, synth::Synth};
+use crate::synth::Synth;
 
 use embassy_time::Timer;
 use embedded_hal::digital::OutputPin;
@@ -7,7 +7,7 @@ where
 	Pin: OutputPin,
 {
 	pin: Pin,
-	synth: Synth<SIZE>,
+	pub synth: Synth<SIZE>,
 }
 
 impl<Pin, const SIZE: usize> Buzzer<Pin, SIZE>
@@ -20,14 +20,6 @@ where
 
 	pub fn is_empty(&self) -> bool {
 		self.synth.is_empty()
-	}
-
-	pub fn add_note(&mut self, note: MidiNote) -> Result<(), ()> {
-		self.synth.add_note(note)
-	}
-
-	pub fn remove_note(&mut self, note: &MidiNote) {
-		self.synth.release_note(note);
 	}
 
 	pub fn clear(&mut self) {

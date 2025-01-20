@@ -32,7 +32,6 @@ log = "0.4.22"
 midly = { version = "0.5.3", default-features = false }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde-json-core = "0.6.0"
-sized-dst = "0.1.1"
 static_cell = { version = "2.1.0", features = ["nightly"] }
 thiserror = { version = "2.0.9", default-features = false }
 

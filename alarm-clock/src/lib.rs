@@ -28,13 +28,11 @@ pub mod tweaks;
 use tweaks::Config;
 
 pub mod message;
-use message::{AlphanumMessage, BuzzerMessage, EventMessage, PlayerMessage, SongEvent};
+use message::{AlphanumMessage, SynthMessage, EventMessage, PlayerMessage, SongEvent};
 
 pub mod midi_dir;
 use midi_dir::Midi;
 use midi_dir::MIDI_DIR;
-
-pub mod note;
 
 pub mod selector;
 
@@ -71,7 +69,7 @@ static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 
 const MIDI_NOTE_CAPACITY: usize = 64;
 
-static MIDI_NOTE_CHANNEL: Channel<BuzzerMessage, MIDI_NOTE_CAPACITY> = Channel::new();
+static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
 static EVENT_CHANNEL: Channel<EventMessage, 1> = Channel::new();
 static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
 static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
@@ -113,11 +111,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	// create buzzer controller
 	let buzzer = Buzzer::from((
 		p.GPIO14.degrade(),
-		Synth::new(
-			config.synth_sustain_ratio,
-			config.synth_decay_constant,
-			config.synth_release_decay_constant,
-		),
+		Synth::new(config.synth_config.clone()),
 	));
 
 	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);

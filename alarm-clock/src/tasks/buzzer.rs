@@ -4,14 +4,14 @@ use embedded_hal::digital::OutputPin;
 
 use crate::circuit::{buzzer, hal};
 use crate::error;
-use crate::message::BuzzerMessage;
+use crate::message::SynthMessage;
 use crate::MIDI_NOTE_CAPACITY;
 
 const BUZZER_NOTES: usize = 32;
 
 #[embassy_executor::task]
 pub async fn update_buzzer(
-	note_receiver: Receiver<'static, CriticalSectionRawMutex, BuzzerMessage, MIDI_NOTE_CAPACITY>,
+	note_receiver: Receiver<'static, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
 	mut buzzer: hal::Buzzer<BUZZER_NOTES>,
 ) {
 	loop {
@@ -28,14 +28,12 @@ pub async fn update_buzzer(
 	}
 }
 
-fn apply_message<P: OutputPin, const N: usize>(buzzer: &mut buzzer::Buzzer<P, N>, message: BuzzerMessage) {
+fn apply_message<P: OutputPin, const N: usize>(buzzer: &mut buzzer::Buzzer<P, N>, message: SynthMessage) {
 	match message {
-		BuzzerMessage::Note(note) if note.on() => {
-			let _ = buzzer
-				.add_note(note)
-				.inspect_err(|_| error!("Buffer full when adding note"));
+		SynthMessage::Midi { channel, message } => {
+			let _ = buzzer.synth.process_midi(channel, message)
+				.inspect_err(|e| error!("Error while processing midi message: {:?}", e));
 		}
-		BuzzerMessage::Note(note) => buzzer.remove_note(&note),
-		BuzzerMessage::Clear => buzzer.clear(),
+		SynthMessage::Clear => buzzer.clear(),
 	}
 }
