@@ -7,18 +7,17 @@ mod xtensa {
 
 	use embedded_hal::i2c::ErrorType;
 
-	use esp_hal::Async;
 	use esp_hal::gpio::{AnyPin, Input, Level, Output, Pull};
 	use esp_hal::i2c::master::{AnyI2c, I2c};
+	use esp_hal::Async;
 
-use crate::synth::Synth;
+	use crate::synth::Synth;
 
 	pub type Alphanum = crate::circuit::alphanum::Alphanum<I2c<'static, Async>>;
 	pub type Button = crate::circuit::button::Button<Input<'static>>;
 	pub type Buzzer<const SIZE: usize> = crate::circuit::buzzer::Buzzer<Output<'static>, SIZE>;
 
-	impl<const SIZE: usize> From<(AnyPin, Synth<SIZE>)> for Buzzer<SIZE>
-	{
+	impl<const SIZE: usize> From<(AnyPin, Synth<SIZE>)> for Buzzer<SIZE> {
 		fn from((pin, synth): (AnyPin, Synth<SIZE>)) -> Self {
 			Self::new(Output::new(pin, Level::Low), synth)
 		}
@@ -26,10 +25,7 @@ use crate::synth::Synth;
 
 	impl<'a> From<(AnyPin, Duration)> for Button {
 		fn from((pin, bounce_time): (AnyPin, Duration)) -> Self {
-			Self::new(
-				Input::new(pin, Pull::Up),
-				bounce_time,
-			)
+			Self::new(Input::new(pin, Pull::Up), bounce_time)
 		}
 	}
 
@@ -44,7 +40,7 @@ use crate::synth::Synth;
 					.unwrap()
 					.with_sda(sda)
 					.with_scl(scl)
-					.into_async()
+					.into_async(),
 			)
 		}
 	}

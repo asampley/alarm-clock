@@ -139,7 +139,7 @@ impl State for StateClock {
 
 		match button_function {
 			ButtonFunction::Select => Some(StateId::ModeSelect),
-			_ => None
+			_ => None,
 		}
 	}
 }
@@ -299,7 +299,9 @@ impl State for StateAlarmSongSet {
 	async fn init(&mut self) {
 		let midi_file = self.midi_selector.curr();
 
-		self.player_sender.send(PlayerMessage::Play(*midi_file)).await;
+		self.player_sender
+			.send(PlayerMessage::Play(*midi_file))
+			.await;
 	}
 
 	async fn button_press(&mut self, button_function: ButtonFunction) -> Option<StateId> {
@@ -317,7 +319,9 @@ impl State for StateAlarmSongSet {
 					ButtonDirection::Next => self.midi_selector.incr(),
 				};
 
-				self.player_sender.send(PlayerMessage::Play(*midi_file)).await;
+				self.player_sender
+					.send(PlayerMessage::Play(*midi_file))
+					.await;
 
 				None
 			}
@@ -362,7 +366,9 @@ impl State for StatePlay {
 	async fn init(&mut self) {
 		let midi_file = self.midi_selector.curr();
 
-		self.player_sender.send(PlayerMessage::Play(*midi_file)).await;
+		self.player_sender
+			.send(PlayerMessage::Play(*midi_file))
+			.await;
 	}
 
 	async fn button_press(&mut self, button_function: ButtonFunction) -> Option<StateId> {

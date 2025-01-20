@@ -15,7 +15,7 @@ use embassy_time::Duration;
 
 use esp_hal::gpio::Pin;
 
-use message::{ButtonFunction, ButtonDirection};
+use message::{ButtonDirection, ButtonFunction};
 use synth::Synth;
 use thiserror::Error;
 
@@ -28,7 +28,7 @@ pub mod tweaks;
 use tweaks::Config;
 
 pub mod message;
-use message::{AlphanumMessage, SynthMessage, EventMessage, PlayerMessage, SongEvent};
+use message::{AlphanumMessage, EventMessage, PlayerMessage, SongEvent, SynthMessage};
 
 pub mod midi_dir;
 use midi_dir::Midi;
@@ -109,27 +109,28 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	esp_hal_embassy::init(timer0.alarm0);
 
 	// create buzzer controller
-	let buzzer = Buzzer::from((
-		p.GPIO14.degrade(),
-		Synth::new(config.synth_config.clone()),
-	));
+	let buzzer = Buzzer::from((p.GPIO14.degrade(), Synth::new(config.synth_config.clone())));
 
 	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
 
 	// create button pollers
 	let buttons = [
 		(ButtonFunction::Select, p.GPIO1.degrade()),
-		(ButtonFunction::Direction(ButtonDirection::Prev), p.GPIO3.degrade()),
-		(ButtonFunction::Direction(ButtonDirection::Next), p.GPIO2.degrade()),
+		(
+			ButtonFunction::Direction(ButtonDirection::Prev),
+			p.GPIO3.degrade(),
+		),
+		(
+			ButtonFunction::Direction(ButtonDirection::Next),
+			p.GPIO2.degrade(),
+		),
 	]
 	.into_iter()
 	.map(|(f, p)| (f, Button::from((p, button_bounce_time))));
 
 	// create alphanum controller
 	let mut alphanum = Alphanum::new_esp_hal(p.I2C0.into(), p.GPIO11.into(), p.GPIO12.into())?;
-	alphanum
-		.set_brightness(config.brightness)
-		.await?;
+	alphanum.set_brightness(config.brightness).await?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	// start task to update buzzer
@@ -159,27 +160,18 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 		info!("Entering state {:?}", state_id);
 
 		let mut state: ConcreteState = match state_id {
-			StateId::Clock => StateClock::new(
-				ALPHANUM_CHANNEL.sender(),
-				PLAYER_CHANNEL.sender(),
-			).into(),
-			StateId::ModeSelect => {
-				StateModeSelect::new(ALPHANUM_CHANNEL.sender()).into()
+			StateId::Clock => {
+				StateClock::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateId::ClockSet => {
-				StateClockSet::new(ALPHANUM_CHANNEL.sender()).into()
+			StateId::ModeSelect => StateModeSelect::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateId::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateId::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateId::AlarmSong => {
+				StateAlarmSongSet::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateId::AlarmTime => {
-				StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into()
+			StateId::Play => {
+				StatePlay::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateId::AlarmSong => StateAlarmSongSet::new(
-				ALPHANUM_CHANNEL.sender(),
-				PLAYER_CHANNEL.sender(),
-			).into(),
-			StateId::Play => StatePlay::new(
-				ALPHANUM_CHANNEL.sender(),
-				PLAYER_CHANNEL.sender(),
-			).into(),
 		};
 
 		state.init().await;

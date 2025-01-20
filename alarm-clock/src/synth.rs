@@ -1,8 +1,11 @@
 use core::cmp::min;
 
-use embassy_time::{Instant, Duration};
+use embassy_time::{Duration, Instant};
 use heapless::FnvIndexMap;
-use midly::{num::{u4, u7}, MidiMessage};
+use midly::{
+	num::{u4, u7},
+	MidiMessage,
+};
 use serde::Deserialize;
 
 /// Chosen because humans should be able to hear at most a 19kHz, or 1/52us
@@ -41,12 +44,8 @@ pub struct Synth<const NOTES: usize> {
 impl SynthConfig {
 	fn instrument_config(&self, instrument: u7) -> &InstrumentConfig {
 		match instrument.as_int() {
-			0..=16 | 25..=40 | 105..=109 | 113..=121 | 123..=125 | 128 => {
-				&self.pluck
-			}
-			17..=24 | 41..=104 | 110..=112 | 122 | 126..=127 => {
-				&self.hold
-			}
+			0..=16 | 25..=40 | 105..=109 | 113..=121 | 123..=125 | 128 => &self.pluck,
+			17..=24 | 41..=104 | 110..=112 | 122 | 126..=127 => &self.hold,
 			128.. => unreachable!(),
 		}
 	}
@@ -85,7 +84,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 			}
 			MidiMessage::ProgramChange { program } => {
 				self.instruments[usize::from(channel.as_int())] = program
-			},
+			}
 			_ => (),
 		})
 	}
@@ -100,9 +99,8 @@ impl<const NOTES: usize> Synth<NOTES> {
 	}
 
 	fn add_note(&mut self, sound_key: SoundKey, vel: u7) -> Result<(), ()> {
-		let on_period_ticks = MAX_NOTE_HALF_DELAY_US as f64
-				* vel.as_int() as f64
-				/ u7::max_value().as_int() as f64;
+		let on_period_ticks =
+			MAX_NOTE_HALF_DELAY_US as f64 * vel.as_int() as f64 / u7::max_value().as_int() as f64;
 
 		let instrument = self.instruments[usize::from(sound_key.channel.as_int())];
 
@@ -111,15 +109,21 @@ impl<const NOTES: usize> Synth<NOTES> {
 			period: Duration::from_micros((1_000_000.0 / frequency(sound_key.key)) as u64),
 			amplitude: Amplitude::Decay {
 				on_period_ticks,
-				sustain_transition: on_period_ticks * self.config.instrument_config(instrument).sustain_ratio,
-			}
+				sustain_transition: on_period_ticks
+					* self.config.instrument_config(instrument).sustain_ratio,
+			},
 		};
 
-		self.notes.insert(sound_key, (sound, Instant::now())).map(|_| ()).map_err(|_| ())
+		self.notes
+			.insert(sound_key, (sound, Instant::now()))
+			.map(|_| ())
+			.map_err(|_| ())
 	}
 
 	fn release_note(&mut self, sound_key: &SoundKey) {
-		self.notes.get_mut(sound_key).map(|(s, _)| s.amplitude.release());
+		self.notes
+			.get_mut(sound_key)
+			.map(|(s, _)| s.amplitude.release());
 	}
 
 	pub fn stop(&mut self) {
@@ -142,21 +146,24 @@ impl<const NOTES: usize> Synth<NOTES> {
 				sound.amplitude.evolve(
 					instrument_config.decay_constant,
 					instrument_config.release_decay_constant,
-					sound.period
+					sound.period,
 				);
 
 				*since_play = t;
 
 				on_period = Some(min(
 					Duration::from_micros(MAX_NOTE_HALF_DELAY_US),
-					on_period.unwrap_or(Duration::from_ticks(0)) + sound.amplitude.on_period()
+					on_period.unwrap_or(Duration::from_ticks(0)) + sound.amplitude.on_period(),
 				));
 			}
 		}
 
 		self.notes.retain(|_, (sound, _)| !sound.amplitude.done());
 
-		on_period.map(|on| Pulse { on, off: Duration::from_micros(MAX_NOTE_HALF_DELAY_US) })
+		on_period.map(|on| Pulse {
+			on,
+			off: Duration::from_micros(MAX_NOTE_HALF_DELAY_US),
+		})
 	}
 }
 
@@ -190,13 +197,15 @@ enum Amplitude {
 	},
 	Release {
 		on_period_ticks: f64,
-	}
+	},
 }
 
 impl Amplitude {
 	const fn on_period(&self) -> Duration {
 		match self {
-			Self::Decay { on_period_ticks, .. } => Duration::from_ticks(*on_period_ticks as u64),
+			Self::Decay {
+				on_period_ticks, ..
+			} => Duration::from_ticks(*on_period_ticks as u64),
 			Self::Sustain { on_period } => *on_period,
 			Self::Release { on_period_ticks } => Duration::from_ticks(*on_period_ticks as u64),
 		}
@@ -204,12 +213,18 @@ impl Amplitude {
 
 	fn release(&mut self) {
 		match self {
-			Self::Decay { on_period_ticks, .. } => *self = Self::Release {
-				on_period_ticks: *on_period_ticks,
-			},
-			Self::Sustain { on_period } => *self = Self::Release {
-				on_period_ticks: on_period.as_ticks() as f64
-			},
+			Self::Decay {
+				on_period_ticks, ..
+			} => {
+				*self = Self::Release {
+					on_period_ticks: *on_period_ticks,
+				}
+			}
+			Self::Sustain { on_period } => {
+				*self = Self::Release {
+					on_period_ticks: on_period.as_ticks() as f64,
+				}
+			}
 			Self::Release { .. } => (),
 		};
 	}
@@ -222,19 +237,17 @@ impl Amplitude {
 		}
 	}
 
-	fn evolve(
-		&mut self,
-		decay_constant: f64,
-		release_decay_constant: f64,
-		elapsed: Duration,
-	) {
+	fn evolve(&mut self, decay_constant: f64, release_decay_constant: f64, elapsed: Duration) {
 		match self {
-			Amplitude::Decay { on_period_ticks, sustain_transition } => {
+			Amplitude::Decay {
+				on_period_ticks,
+				sustain_transition,
+			} => {
 				*on_period_ticks *= libm::exp2(-(elapsed.as_ticks() as f64) * decay_constant);
 
 				if on_period_ticks < sustain_transition {
 					*self = Amplitude::Sustain {
-						on_period: Duration::from_ticks(*sustain_transition as u64)
+						on_period: Duration::from_ticks(*sustain_transition as u64),
 					}
 				}
 			}
@@ -242,7 +255,8 @@ impl Amplitude {
 			Amplitude::Release { on_period_ticks } => {
 				// exponential shifted down to intersect the x-axis
 				*on_period_ticks += 1.0;
-				*on_period_ticks *= libm::exp2(-(elapsed.as_ticks() as f64) * release_decay_constant);
+				*on_period_ticks *=
+					libm::exp2(-(elapsed.as_ticks() as f64) * release_decay_constant);
 				*on_period_ticks -= 1.0;
 			}
 		}

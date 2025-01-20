@@ -1,6 +1,6 @@
 use heapless::String;
-use midly::MidiMessage;
 use midly::num::u4;
+use midly::MidiMessage;
 
 use crate::borrow::Calf;
 use crate::circuit::alphanum::BlinkRate;
@@ -50,10 +50,7 @@ impl From<ButtonEvent> for EventMessage {
 
 #[derive(Debug)]
 pub enum SynthMessage {
-	Midi {
-		channel: u4,
-		message: MidiMessage,
-	},
+	Midi { channel: u4, message: MidiMessage },
 	Clear,
 }
 

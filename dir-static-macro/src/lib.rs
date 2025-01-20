@@ -17,13 +17,14 @@ pub fn dir_array(
 	let dir_path = Path::new(&dir_name);
 
 	let dir = if dir_path.is_relative() {
-        std::fs::read_dir(PathBuf::from_iter([
+		std::fs::read_dir(PathBuf::from_iter([
 			Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()),
 			dir_path,
 		]))
 	} else {
 		std::fs::read_dir(dir_path)
-	}.expect("Failed to read directory");
+	}
+	.expect("Failed to read directory");
 
 	let files = dir
 		.into_iter()
@@ -40,26 +41,28 @@ pub fn dir_array(
 		match items_iter.next() {
 			None => panic!("No array type found"),
 			Some(tree) => match tree {
-				TokenTree::Group(ref group) => if group.delimiter() == Delimiter::Bracket {
-					let len = files.len();
+				TokenTree::Group(ref group) => {
+					if group.delimiter() == Delimiter::Bracket {
+						let len = files.len();
 
-					let file_structs: TokenStream = files
-						.iter()
-						.map(|p| {
-							let name = p.file_stem().unwrap().to_str().unwrap();
-							let path = p.as_path().to_str().unwrap();
-							quote!( File { name: #name, data: include_bytes!( #path ) }, )
-						})
-						.collect();
+						let file_structs: TokenStream = files
+							.iter()
+							.map(|p| {
+								let name = p.file_stem().unwrap().to_str().unwrap();
+								let path = p.as_path().to_str().unwrap();
+								quote!( File { name: #name, data: include_bytes!( #path ) }, )
+							})
+							.collect();
 
-					tokens.extend(quote!( [ File ; #len ] = [ #file_structs ] ));
+						tokens.extend(quote!( [ File ; #len ] = [ #file_structs ] ));
 
-					break;
+						break;
+					}
 				}
 				_ => tokens.extend(std::iter::once(tree)),
 			},
 		}
-	};
+	}
 
 	tokens.extend(items_iter);
 

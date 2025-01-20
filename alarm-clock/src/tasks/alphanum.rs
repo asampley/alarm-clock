@@ -30,11 +30,7 @@ pub async fn alphanum_task(
 		let msg = match text_mode {
 			TextMode::Static => Ok(receiver.receive().await),
 			TextMode::Time => {
-				with_timeout(
-					ClockTime::duration_to_next_minute(),
-					receiver.receive(),
-				)
-				.await
+				with_timeout(ClockTime::duration_to_next_minute(), receiver.receive()).await
 			}
 			TextMode::Iter(_) => {
 				with_timeout(

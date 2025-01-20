@@ -1,4 +1,4 @@
-use embassy_time::{Duration, Instant, TICK_HZ, WithTimeout, TimeoutError};
+use embassy_time::{Duration, Instant, TimeoutError, WithTimeout, TICK_HZ};
 use heapless::String;
 
 use crate::Watch;
@@ -7,7 +7,9 @@ use crate::Watch;
 static TIME_ZERO: Watch<Instant, 64> = Watch::new_with(Instant::from_ticks(0));
 
 pub async fn set_time(time: ClockTime) {
-	TIME_ZERO.sender().send(Instant::now().clock_sub(Duration::from_secs(time.minutes as u64 * 60)));
+	TIME_ZERO
+		.sender()
+		.send(Instant::now().clock_sub(Duration::from_secs(time.minutes as u64 * 60)));
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,7 +34,7 @@ impl ClockTime {
 
 		loop {
 			let wait_time = Duration::from_secs(
-				(self - ClockTime::now() - ClockTime::new(1)).minutes as u64 * 60
+				(self - ClockTime::now() - ClockTime::new(1)).minutes as u64 * 60,
 			) + Self::duration_to_next_minute();
 
 			match time_zero.changed().with_timeout(wait_time).await {
@@ -96,6 +98,5 @@ impl ClockSub<Duration> for Instant {
 }
 
 fn clock_tick_sub(ticks_a: u64, ticks_b: u64) -> u64 {
-	(ticks_a.wrapping_sub(ticks_b) as i64)
-		.rem_euclid(TICK_HZ as i64 * 60 * 60 * 24) as u64
+	(ticks_a.wrapping_sub(ticks_b) as i64).rem_euclid(TICK_HZ as i64 * 60 * 60 * 24) as u64
 }

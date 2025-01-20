@@ -28,10 +28,15 @@ pub async fn update_buzzer(
 	}
 }
 
-fn apply_message<P: OutputPin, const N: usize>(buzzer: &mut buzzer::Buzzer<P, N>, message: SynthMessage) {
+fn apply_message<P: OutputPin, const N: usize>(
+	buzzer: &mut buzzer::Buzzer<P, N>,
+	message: SynthMessage,
+) {
 	match message {
 		SynthMessage::Midi { channel, message } => {
-			let _ = buzzer.synth.process_midi(channel, message)
+			let _ = buzzer
+				.synth
+				.process_midi(channel, message)
 				.inspect_err(|e| error!("Error while processing midi message: {:?}", e));
 		}
 		SynthMessage::Clear => buzzer.clear(),
