@@ -46,7 +46,7 @@ impl ClockTime {
 
 	pub fn duration_to_next_minute() -> Duration {
 		let delta = Instant::now().clock_sub(TIME_ZERO.try_get().unwrap());
-		Duration::from_millis((60 * 1000) - delta.as_millis() % (60 * 1000))
+		Duration::from_secs(60) - delta.rem_min()
 	}
 
 	pub fn hours(&self) -> u8 {
@@ -72,6 +72,23 @@ impl core::ops::Sub<ClockTime> for ClockTime {
 
 	fn sub(self, rhs: ClockTime) -> Self::Output {
 		ClockTime::new((self.minutes.wrapping_sub(rhs.minutes) as i16).rem_euclid(24 * 60) as u16)
+	}
+}
+
+pub trait TimeRem {
+	// The remainder when divided into seconds
+	fn rem_sec(self) -> Self;
+	// The remainder when divided into minutes
+	fn rem_min(self) -> Self;
+}
+
+impl TimeRem for Duration {
+	fn rem_sec(self) -> Self {
+		Duration::from_ticks(self.as_ticks().rem_euclid(TICK_HZ))
+	}
+
+	fn rem_min(self) -> Self {
+		Duration::from_ticks(self.as_ticks().rem_euclid(TICK_HZ * 60))
 	}
 }
 

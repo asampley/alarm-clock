@@ -39,3 +39,9 @@ where
 		Ok(())
 	}
 }
+
+#[derive(Debug)]
+pub enum Either<T, U> {
+	First(T),
+	Second(U),
+}

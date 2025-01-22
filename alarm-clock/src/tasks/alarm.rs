@@ -1,13 +1,12 @@
-use embassy_futures::select::{select, Either};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Sender;
+use futures_lite::FutureExt;
 
-use crate::info;
-use crate::message::PlayerMessage;
-use crate::{ALARM_SONG, ALARM_TIME};
+use crate::{info, Sender};
+use crate::message::EventMessage;
+use crate::util::Either;
+use crate::ALARM_TIME;
 
 #[embassy_executor::task]
-pub async fn alarm_task(player_sender: Sender<'static, CriticalSectionRawMutex, PlayerMessage, 1>) {
+pub async fn alarm_task(event_channel: Sender<EventMessage, 1>) {
 	let mut alarm_time = ALARM_TIME.receiver().unwrap();
 
 	loop {
@@ -17,13 +16,12 @@ pub async fn alarm_task(player_sender: Sender<'static, CriticalSectionRawMutex, 
 			}
 			Some(time) => {
 				info!("Next alarm at {}", time.as_chars());
-				match select(time.wait_until(), alarm_time.changed()).await {
+				match async { Either::First(time.wait_until()) }
+					.or(async { Either::Second(alarm_time.changed()) }).await
+				{
 					Either::First(_) => {
 						info!("Alarm time!");
-
-						player_sender
-							.send(PlayerMessage::Loop(*ALARM_SONG.lock().await))
-							.await;
+						event_channel.send(EventMessage::Alarm).await;
 					}
 					Either::Second(_) => (),
 				}

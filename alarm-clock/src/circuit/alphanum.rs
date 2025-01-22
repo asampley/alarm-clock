@@ -110,7 +110,23 @@ impl<Pin: I2c> Alphanum<Pin> {
 	}
 }
 
-fn char_to_alphanum(c: char) -> u16 {
+pub fn timer_with_hand_alphanum(hand: u8) -> u16 {
+	const CLOCK: u16 = char_to_alphanum('O');
+
+	CLOCK | match hand {
+		0 => 0b_0000_0010_0000_0000,
+		1 => 0b_0000_0100_0000_0000,
+		2 => 0b_0000_0000_1000_0000,
+		3 => 0b_0010_0000_0000_0000, 
+		4 => 0b_0001_0000_0000_0000,
+		5 => 0b_0000_1000_0000_0000,
+		6 => 0b_0000_0000_0100_0000,
+		7 => 0b_0000_0001_0000_0000,
+		_ => 0,
+	}
+}
+
+const fn char_to_alphanum(c: char) -> u16 {
 	match c {
 		' ' => 0b_0000_0000_0000_0000,
 		'!' => 0b_0000_0000_0000_0110,

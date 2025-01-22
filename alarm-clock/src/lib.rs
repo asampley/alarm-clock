@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
+#![feature(never_type)]
 
 use defmt_rtt as _;
 use esp_backtrace as _;
@@ -15,11 +16,9 @@ use embassy_time::Duration;
 
 use esp_hal::gpio::Pin;
 
-use message::{ButtonDirection, ButtonFunction};
-use synth::Synth;
-use thiserror::Error;
+use futures_lite::FutureExt;
 
-pub mod borrow;
+use thiserror::Error;
 
 pub mod circuit;
 use circuit::hal::{Alphanum, Button, Buzzer};
@@ -29,6 +28,8 @@ use tweaks::Config;
 
 pub mod message;
 use message::{AlphanumMessage, EventMessage, PlayerMessage, SongEvent, SynthMessage};
+use message::TimerMessage;
+use message::{ButtonDirection, ButtonFunction};
 
 pub mod midi_dir;
 use midi_dir::Midi;
@@ -37,11 +38,11 @@ use midi_dir::MIDI_DIR;
 pub mod selector;
 
 pub mod synth;
+use synth::Synth;
 
 pub mod states;
 use states::{
-	ConcreteState, State, StateAlarmSongSet, StateAlarmTimeSet, StateClock, StateClockSet, StateId,
-	StateModeSelect, StatePlay,
+	ConcreteState, State, StateAlarmSongSet, StateAlarmTimeSet, StateClock, StateClockSet, StateModeSelect, StatePlay, StateTimerRunning, StateTransition
 };
 
 pub mod tasks;
@@ -50,11 +51,22 @@ use tasks::alphanum::alphanum_task;
 use tasks::buzzer::update_buzzer;
 use tasks::input::poll_input;
 use tasks::player::midi_player;
+use tasks::timer::timer_task;
 
 pub mod time;
 use time::ClockTime;
 
+pub mod timer;
+
+pub mod util;
+
+use crate::states::{StateTimer, StateTimerSet, StateAlarm};
+
 type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CriticalSectionRawMutex, T, CAP>;
+type Sender<T, const CAP: usize>
+	= embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, T, CAP>;
+type Receiver<T, const CAP: usize>
+	= embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, T, CAP>;
 type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
 
@@ -69,10 +81,11 @@ static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 
 const MIDI_NOTE_CAPACITY: usize = 64;
 
-static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
-static EVENT_CHANNEL: Channel<EventMessage, 1> = Channel::new();
-static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
 static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
+static EVENT_CHANNEL: Channel<EventMessage, 1> = Channel::new();
+static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
+static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
+static TIMER_CHANNEL: Channel<TimerMessage, 1> = Channel::new();
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -152,49 +165,71 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	spawner.spawn(alphanum_task(alphanum, ALPHANUM_CHANNEL.receiver()))?;
 
 	// start alarm task
-	spawner.spawn(alarm_task(PLAYER_CHANNEL.sender()))?;
+	spawner.spawn(alarm_task(EVENT_CHANNEL.sender()))?;
 
-	let mut state_id = StateId::Clock;
+	// start timer task
+	spawner.spawn(timer_task(
+		TIMER_CHANNEL.receiver(),
+		EVENT_CHANNEL.sender(),
+	))?;
+
+	let mut state_transition = StateTransition::Clock;
+
+	let event_receiver = EVENT_CHANNEL.receiver();
 
 	loop {
-		info!("Entering state {:?}", state_id);
+		info!("Entering state {:?}", state_transition);
 
-		let mut state: ConcreteState = match state_id {
-			StateId::Clock => {
+		let mut state: ConcreteState = match state_transition {
+			StateTransition::Clock => {
 				StateClock::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateId::ModeSelect => StateModeSelect::new(ALPHANUM_CHANNEL.sender()).into(),
-			StateId::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
-			StateId::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
-			StateId::AlarmSong => {
+			StateTransition::ModeSelect => StateModeSelect::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateTransition::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateTransition::Alarm => StateAlarm::new(
+				ALPHANUM_CHANNEL.sender(),
+				PLAYER_CHANNEL.sender(),
+			).into(),
+			StateTransition::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateTransition::AlarmSong => {
 				StateAlarmSongSet::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateId::Play => {
+			StateTransition::Play => {
 				StatePlay::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
+			}
+			StateTransition::Timer => {
+				StateTimer::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
+			}
+			StateTransition::TimerSet => {
+				StateTimerSet::new(ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
+			}
+			StateTransition::TimerRunning => {
+				StateTimerRunning::new(ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
 			}
 		};
 
 		state.init().await;
 
-		let event_receiver = EVENT_CHANNEL.receiver();
+		state_transition = loop {
+			match event_receiver.receive().or(async { state.between_events().await }).await {
+				msg => {
+					match &msg {
+						EventMessage::Song(event) => match event {
+							SongEvent::Start(name) => {
+								info!("Now playing {:?}", name);
+							}
+							SongEvent::End(name) => {
+								info!("Stopped playing {:?}", name);
+							}
 
-		state_id = loop {
-			let msg = event_receiver.receive().await;
-
-			match &msg {
-				EventMessage::Song(event) => match event {
-					SongEvent::Start(name) => {
-						info!("Now playing {:?}", name);
+						},
+						_ => (),
 					}
-					SongEvent::End(name) => {
-						info!("Stopped playing {:?}", name);
-					}
-				},
-				_ => (),
-			}
 
-			if let Some(next_state) = state.event(msg).await {
-				break next_state;
+					if let Some(next_state) = state.event(msg).await {
+						break next_state;
+					}
+				}
 			}
 		};
 

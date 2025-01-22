@@ -2,15 +2,14 @@ use core::future::Future;
 use core::pin::{pin, Pin};
 use core::task::{Context, Poll};
 
-use crate::{error, info, warn, MIDI_NOTE_CAPACITY};
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use crate::{error, info, warn, Receiver, Sender, MIDI_NOTE_CAPACITY};
 use embassy_time::{Duration, Instant};
-use futures::{Stream, StreamExt};
+use futures_lite::{FutureExt, Stream, StreamExt};
 use heapless::{binary_heap::Min, BinaryHeap, Vec};
 
 use crate::message::{EventMessage, PlayerMessage, SongEvent, SynthMessage};
+use crate::util::Either;
 
-use embassy_sync::channel::{Receiver, Sender};
 use embassy_time::Timer;
 
 use midly::Timing;
@@ -21,9 +20,9 @@ const TRACK_CAPCITY: usize = 64;
 
 #[embassy_executor::task]
 pub async fn midi_player(
-	player_receiver: Receiver<'static, CriticalSectionRawMutex, PlayerMessage, 1>,
-	note_sender: Sender<'static, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
-	event_sender: Sender<'static, CriticalSectionRawMutex, EventMessage, 1>,
+	player_receiver: Receiver<PlayerMessage, 1>,
+	note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
+	event_sender: Sender<EventMessage, 1>,
 ) {
 	let mut playing = None;
 	let mut looping = false;
@@ -58,13 +57,6 @@ pub async fn midi_player(
 			};
 
 			let mut events = Vec::<_, TRACK_CAPCITY>::new();
-			let received_message = pin!(async {
-				match player_receiver.receive().await {
-					PlayerMessage::Loop(midi) => (Some(midi), true),
-					PlayerMessage::Play(midi) => (Some(midi), false),
-					PlayerMessage::Stop => (None, false),
-				}
-			});
 
 			match header.format {
 				Format::SingleTrack | Format::Parallel => {
@@ -84,22 +76,34 @@ pub async fn midi_player(
 
 					info!("Loaded midi file with {} tracks", events.len());
 
-					let send_stream =
+					let mut send_stream =
 						SendTimedEventStream::new(events, tempo, ticks_per_beat, note_sender);
-
-					let mut send_until = send_stream.take_until(received_message);
 
 					event_sender
 						.send(SongEvent::Start(now_playing.name).into())
 						.await;
 
-					send_until.by_ref().collect::<()>().await;
+					let res = loop {
+						let send = send_stream.next();
+
+						match async { Either::First(player_receiver.receive().await) }
+							.or(async { Either::Second(send.await) }).await
+						{
+							Either::First(msg) => match msg {
+								PlayerMessage::Loop(midi) => break Some((Some(midi), true)),
+								PlayerMessage::Play(midi) => break Some((Some(midi), false)),
+								PlayerMessage::Stop => break Some((None, false)),
+							}
+							Either::Second(Some(_)) => continue,
+							Either::Second(None) => break None,
+						}
+					};
 
 					event_sender
 						.send(SongEvent::End(now_playing.name).into())
 						.await;
 
-					if let Some(res) = send_until.take_result() {
+					if let Some(res) = res {
 						(playing, looping) = res;
 					} else {
 						if !looping {
@@ -153,7 +157,7 @@ where
 	ticks_per_beat: u16,
 	last_instant: Instant,
 	next_events: BinaryHeap<OrderedEvent<'a>, Min, N>,
-	note_sender: Sender<'a, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
+	note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
 }
 
 impl<'a, I, const N: usize> SendTimedEventStream<'a, I, N>
@@ -164,7 +168,7 @@ where
 		mut events: Vec<I, N>,
 		tempo: u32,
 		ticks_per_beat: u16,
-		note_sender: Sender<'a, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
+		note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
 	) -> Self {
 		let last_instant = Instant::now();
 

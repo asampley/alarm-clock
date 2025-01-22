@@ -1,9 +1,7 @@
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_sync::channel::Receiver;
 use embedded_hal::digital::OutputPin;
 
 use crate::circuit::{buzzer, hal};
-use crate::error;
+use crate::{error, Receiver};
 use crate::message::SynthMessage;
 use crate::MIDI_NOTE_CAPACITY;
 
@@ -11,7 +9,7 @@ const BUZZER_NOTES: usize = 32;
 
 #[embassy_executor::task]
 pub async fn update_buzzer(
-	note_receiver: Receiver<'static, CriticalSectionRawMutex, SynthMessage, MIDI_NOTE_CAPACITY>,
+	note_receiver: Receiver<SynthMessage, MIDI_NOTE_CAPACITY>,
 	mut buzzer: hal::Buzzer<BUZZER_NOTES>,
 ) {
 	loop {

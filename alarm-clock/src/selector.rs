@@ -9,6 +9,7 @@ pub trait Selector<T> {
 	fn len(&self) -> usize;
 }
 
+#[derive(Debug)]
 pub struct LinearSelector<'a, T> {
 	list: &'a [T],
 	curr: usize,
@@ -47,11 +48,13 @@ impl<'a, T> Selector<T> for LinearSelector<'a, T> {
 	}
 }
 
+#[derive(Debug)]
 enum Bound {
 	Single(usize),
 	Range(usize, usize),
 }
 
+#[derive(Debug)]
 pub struct BinarySelector<'a, T> {
 	list: &'a [T],
 	bound: Bound,
@@ -116,5 +119,105 @@ impl<'a, T> Selector<T> for BinarySelector<'a, T> {
 
 	fn len(&self) -> usize {
 		self.list.len()
+	}
+}
+
+#[derive(Debug)]
+pub enum ExponentialSelector {
+	Increasing {
+		value: usize,
+	},
+	Tuning {
+		value: usize,
+		digit: u8,
+	},
+	Single {
+		value: usize,
+	},
+}
+
+impl Default for ExponentialSelector {
+	fn default() -> Self {
+		Self::Increasing { value: 1 }
+	}
+}
+
+impl Selector<usize> for ExponentialSelector {
+	fn incr(&mut self) -> &usize {
+		match self {
+			Self::Increasing { value } => {
+				value.checked_shl(1).map(|new| *value = new);
+			}
+			Self::Tuning { value, digit } => {
+				if *digit == 0 {
+					*self = Self::Single { value: *value };
+					self.incr();
+				} else {
+					*digit -= 1;
+					*value |= 1 << *digit;
+				}
+			}
+			Self::Single { value } => {
+				*value = value.saturating_add(1)
+			}
+		}
+
+		self.curr()
+	}
+
+	fn decr(&mut self) -> &usize {
+		match self {
+			Self::Increasing { value } => {
+				*value >>= 1;
+
+				match value.checked_ilog2() {
+					Some(digit) => {
+						let digit = digit - 1;
+
+						*value |= 1 << digit;
+
+						*self = Self::Tuning {
+							value: *value,
+							digit: digit as u8,
+						};
+					}
+					None => *self = Self::Single { value: *value }
+				}
+			}
+			Self::Tuning { value, digit } => {
+				if *digit == 0 {
+					*self = Self::Single { value: *value };
+					self.decr();
+				} else {
+					*value &= !(1 << *digit);
+					*digit -= 1;
+					*value |= 1 << *digit;
+				}
+			}
+			Self::Single { value } => {
+				*value = value.saturating_sub(1);
+			}
+		}
+
+		self.curr()
+	}
+
+	fn curr(&self) -> &usize {
+		match self {
+			Self::Increasing { value }
+				| Self::Tuning { value, .. }
+				| Self::Single { value }
+			=> {
+				value
+			}
+		}
+	}
+
+	fn reset(&mut self) {
+		*self = Self::Increasing { value: 0 }
+	}
+
+	fn len(&self) -> usize {
+		usize::MAX
 	}
 }

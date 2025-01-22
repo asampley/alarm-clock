@@ -2,7 +2,7 @@ use heapless::String;
 use midly::num::u4;
 use midly::MidiMessage;
 
-use crate::borrow::Calf;
+use crate::util::Calf;
 use crate::circuit::alphanum::BlinkRate;
 use crate::midi_dir::Midi;
 
@@ -10,12 +10,20 @@ use crate::midi_dir::Midi;
 pub enum EventMessage {
 	Button(ButtonEvent),
 	Song(SongEvent),
+	Timer(TimerEvent),
+	Alarm,
 }
 
 #[derive(Debug)]
 pub enum ButtonEvent {
 	Press(ButtonFunction),
 	Release(ButtonFunction),
+}
+
+impl From<ButtonEvent> for EventMessage {
+	fn from(from: ButtonEvent) -> Self {
+		EventMessage::Button(from)
+	}
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -42,9 +50,15 @@ impl From<SongEvent> for EventMessage {
 	}
 }
 
-impl From<ButtonEvent> for EventMessage {
-	fn from(from: ButtonEvent) -> Self {
-		EventMessage::Button(from)
+#[derive(Debug)]
+pub enum TimerEvent {
+	Start,
+	End,
+}
+
+impl From<TimerEvent> for EventMessage {
+	fn from(from: TimerEvent) -> Self {
+		EventMessage::Timer(from)
 	}
 }
 
@@ -62,11 +76,16 @@ pub enum PlayerMessage {
 }
 
 #[derive(Debug)]
+pub enum TimerMessage {
+	Seconds(u64),
+	Cancel,
+}
+
+#[derive(Debug)]
 #[allow(dead_code)]
 pub enum AlphanumMessage {
 	Static(Calf<'static, String<4>>),
 	Loop(&'static str),
-	Time,
 	Empty,
 	Blink(BlinkRate),
 }
