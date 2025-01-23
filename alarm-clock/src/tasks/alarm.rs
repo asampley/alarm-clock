@@ -16,10 +16,10 @@ pub async fn alarm_task(event_channel: Sender<EventMessage, 1>) {
 			}
 			Some(time) => {
 				info!("Next alarm at {}", time.as_chars());
-				match async { Either::First(time.wait_until()) }
-					.or(async { Either::Second(alarm_time.changed()) }).await
+				match async { Either::First(time.wait_until().await) }
+					.or(async { Either::Second(alarm_time.changed().await) }).await
 				{
-					Either::First(_) => {
+					Either::First(()) => {
 						info!("Alarm time!");
 						event_channel.send(EventMessage::Alarm).await;
 					}
