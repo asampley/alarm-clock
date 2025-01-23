@@ -3,7 +3,7 @@ use embassy_time::{with_timeout, Duration, TimeoutError};
 
 use heapless::String;
 
-use crate::{CONFIG, Receiver};
+use crate::{Receiver, CONFIG};
 
 use crate::circuit::hal::Alphanum;
 use crate::message::AlphanumMessage;
@@ -16,10 +16,7 @@ enum TextMode<I: Iterator<Item = char>> {
 }
 
 #[embassy_executor::task]
-pub async fn alphanum_task(
-	mut alphanum: Alphanum,
-	receiver: Receiver<AlphanumMessage, 1>,
-) -> ! {
+pub async fn alphanum_task(mut alphanum: Alphanum, receiver: Receiver<AlphanumMessage, 1>) -> ! {
 	let mut text; // must keep text in scope to create an iterator
 	let mut text_mode = TextMode::Static;
 

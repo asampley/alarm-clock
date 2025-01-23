@@ -124,16 +124,9 @@ impl<'a, T> Selector<T> for BinarySelector<'a, T> {
 
 #[derive(Debug)]
 pub enum ExponentialSelector {
-	Increasing {
-		value: usize,
-	},
-	Tuning {
-		value: usize,
-		digit: u8,
-	},
-	Single {
-		value: usize,
-	},
+	Increasing { value: usize },
+	Tuning { value: usize, digit: u8 },
+	Single { value: usize },
 }
 
 impl Default for ExponentialSelector {
@@ -157,9 +150,7 @@ impl Selector<usize> for ExponentialSelector {
 					*value |= 1 << *digit;
 				}
 			}
-			Self::Single { value } => {
-				*value = value.saturating_add(1)
-			}
+			Self::Single { value } => *value = value.saturating_add(1),
 		}
 
 		self.curr()
@@ -181,7 +172,7 @@ impl Selector<usize> for ExponentialSelector {
 							digit: digit as u8,
 						};
 					}
-					None => *self = Self::Single { value: *value }
+					None => *self = Self::Single { value: *value },
 				}
 			}
 			Self::Tuning { value, digit } => {
@@ -204,10 +195,7 @@ impl Selector<usize> for ExponentialSelector {
 
 	fn curr(&self) -> &usize {
 		match self {
-			Self::Increasing { value }
-				| Self::Tuning { value, .. }
-				| Self::Single { value }
-			=> {
+			Self::Increasing { value } | Self::Tuning { value, .. } | Self::Single { value } => {
 				value
 			}
 		}

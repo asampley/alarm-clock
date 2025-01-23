@@ -1,5 +1,5 @@
-use crate::{error, Sender};
 use crate::message::ButtonFunction;
+use crate::{error, Sender};
 
 use crate::circuit::hal::Button;
 use crate::message::{ButtonEvent, EventMessage};

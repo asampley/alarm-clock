@@ -1,9 +1,9 @@
 use embedded_hal::digital::OutputPin;
 
 use crate::circuit::{buzzer, hal};
-use crate::{error, Receiver};
 use crate::message::SynthMessage;
 use crate::MIDI_NOTE_CAPACITY;
+use crate::{error, Receiver};
 
 const BUZZER_NOTES: usize = 32;
 

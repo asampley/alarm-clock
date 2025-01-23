@@ -2,9 +2,9 @@ use heapless::String;
 use midly::num::u4;
 use midly::MidiMessage;
 
-use crate::util::Calf;
 use crate::circuit::alphanum::BlinkRate;
 use crate::midi_dir::Midi;
+use crate::util::Calf;
 
 #[derive(Debug)]
 pub enum EventMessage {

@@ -27,8 +27,8 @@ pub mod tweaks;
 use tweaks::Config;
 
 pub mod message;
-use message::{AlphanumMessage, EventMessage, PlayerMessage, SongEvent, SynthMessage};
 use message::TimerMessage;
+use message::{AlphanumMessage, EventMessage, PlayerMessage, SongEvent, SynthMessage};
 use message::{ButtonDirection, ButtonFunction};
 
 pub mod midi_dir;
@@ -42,7 +42,8 @@ use synth::Synth;
 
 pub mod states;
 use states::{
-	ConcreteState, State, StateAlarmSongSet, StateAlarmTimeSet, StateClock, StateClockSet, StateModeSelect, StatePlay, StateTimerRunning, StateTransition
+	ConcreteState, State, StateAlarmSongSet, StateAlarmTimeSet, StateClock, StateClockSet,
+	StateModeSelect, StatePlay, StateTimerRunning, StateTransition,
 };
 
 pub mod tasks;
@@ -60,13 +61,13 @@ pub mod timer;
 
 pub mod util;
 
-use crate::states::{StateTimer, StateTimerSet, StateAlarm};
+use crate::states::{StateAlarm, StateTimer, StateTimerSet};
 
 type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CriticalSectionRawMutex, T, CAP>;
-type Sender<T, const CAP: usize>
-	= embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, T, CAP>;
-type Receiver<T, const CAP: usize>
-	= embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, T, CAP>;
+type Sender<T, const CAP: usize> =
+	embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, T, CAP>;
+type Receiver<T, const CAP: usize> =
+	embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, T, CAP>;
 type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
 
@@ -168,10 +169,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	spawner.spawn(alarm_task(EVENT_CHANNEL.sender()))?;
 
 	// start timer task
-	spawner.spawn(timer_task(
-		TIMER_CHANNEL.receiver(),
-		EVENT_CHANNEL.sender(),
-	))?;
+	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
 
 	let mut state_transition = StateTransition::Clock;
 
@@ -186,10 +184,9 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			}
 			StateTransition::ModeSelect => StateModeSelect::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
-			StateTransition::Alarm => StateAlarm::new(
-				ALPHANUM_CHANNEL.sender(),
-				PLAYER_CHANNEL.sender(),
-			).into(),
+			StateTransition::Alarm => {
+				StateAlarm::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
+			}
 			StateTransition::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::AlarmSong => {
 				StateAlarmSongSet::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
@@ -211,7 +208,11 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 		state.init().await;
 
 		state_transition = loop {
-			match event_receiver.receive().or(async { state.between_events().await }).await {
+			match event_receiver
+				.receive()
+				.or(async { state.between_events().await })
+				.await
+			{
 				msg => {
 					match &msg {
 						EventMessage::Song(event) => match event {
@@ -221,7 +222,6 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 							SongEvent::End(name) => {
 								info!("Stopped playing {:?}", name);
 							}
-
 						},
 						_ => (),
 					}

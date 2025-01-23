@@ -87,13 +87,14 @@ pub async fn midi_player(
 						let send = send_stream.next();
 
 						match async { Either::First(player_receiver.receive().await) }
-							.or(async { Either::Second(send.await) }).await
+							.or(async { Either::Second(send.await) })
+							.await
 						{
 							Either::First(msg) => match msg {
 								PlayerMessage::Loop(midi) => break Some((Some(midi), true)),
 								PlayerMessage::Play(midi) => break Some((Some(midi), false)),
 								PlayerMessage::Stop => break Some((None, false)),
-							}
+							},
 							Either::Second(Some(_)) => continue,
 							Either::Second(None) => break None,
 						}
