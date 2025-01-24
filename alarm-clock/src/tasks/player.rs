@@ -1,10 +1,8 @@
-use core::future::Future;
-use core::pin::{pin, Pin};
-use core::task::{Context, Poll};
+use core::pin::pin;
 
 use crate::{error, info, warn, Receiver, Sender, MIDI_NOTE_CAPACITY};
 use embassy_time::{Duration, Instant};
-use futures_lite::{FutureExt, Stream, StreamExt};
+use futures_lite::{stream, FutureExt, Stream, StreamExt};
 use heapless::{binary_heap::Min, BinaryHeap, Vec};
 
 use crate::message::{EventMessage, PlayerMessage, SongEvent, SynthMessage};
@@ -76,18 +74,17 @@ pub async fn midi_player(
 
 					info!("Loaded midi file with {} tracks", events.len());
 
-					let mut send_stream =
-						SendTimedEventStream::new(events, tempo, ticks_per_beat, note_sender);
+					let mut event_stream = pin!(stream_events_timed(events, tempo, ticks_per_beat));
 
 					event_sender
 						.send(SongEvent::Start(now_playing.name).into())
 						.await;
 
 					let res = loop {
-						let send = send_stream.next();
+						let event = event_stream.next();
 
 						match async { Either::First(player_receiver.receive().await) }
-							.or(async { Either::Second(send.await) })
+							.or(async { Either::Second(event.await) })
 							.await
 						{
 							Either::First(msg) => match msg {
@@ -95,7 +92,7 @@ pub async fn midi_player(
 								PlayerMessage::Play(midi) => break Some((Some(midi), false)),
 								PlayerMessage::Stop => break Some((None, false)),
 							},
-							Either::Second(Some(_)) => continue,
+							Either::Second(Some(msg)) => note_sender.send(msg).await,
 							Either::Second(None) => break None,
 						}
 					};
@@ -149,101 +146,65 @@ impl Ord for OrderedEvent<'_> {
 	}
 }
 
-pub struct SendTimedEventStream<'a, I, const N: usize>
-where
-	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>>,
-{
-	events: Vec<I, N>,
+fn stream_events_timed<
+	'a,
+	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>> + 'static,
+	const N: usize,
+>(
+	mut events: Vec<I, N>,
 	tempo: u32,
 	ticks_per_beat: u16,
-	last_instant: Instant,
-	next_events: BinaryHeap<OrderedEvent<'a>, Min, N>,
-	note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
-}
+) -> impl Stream<Item = SynthMessage> + use<'a, I, N> {
+	let mut next_events: BinaryHeap<_, Min, N> = Default::default();
 
-impl<'a, I, const N: usize> SendTimedEventStream<'a, I, N>
-where
-	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>>,
-{
-	fn new(
-		mut events: Vec<I, N>,
-		tempo: u32,
-		ticks_per_beat: u16,
-		note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
-	) -> Self {
-		let last_instant = Instant::now();
-
-		let mut next_events: BinaryHeap<_, _, N> = Default::default();
-
-		for (t_i, track_events) in events.iter_mut().enumerate() {
-			match track_events.next() {
-				Some(Ok(ev)) => next_events
-					.push(OrderedEvent {
-						ticks: ev.delta.into(),
-						kind: ev.kind,
-						track: t_i,
-					})
-					.unwrap(),
-				Some(Err(e)) => warn_midly(&e),
-				None => (),
-			}
-		}
-
-		Self {
-			events,
-			tempo,
-			ticks_per_beat,
-			last_instant,
-			next_events,
-			note_sender,
+	for (t_i, track_events) in events.iter_mut().enumerate() {
+		match track_events.next() {
+			Some(Ok(ev)) => next_events
+				.push(OrderedEvent {
+					ticks: ev.delta.into(),
+					kind: ev.kind,
+					track: t_i,
+				})
+				.unwrap(),
+			Some(Err(e)) => warn_midly(&e),
+			None => (),
 		}
 	}
-}
 
-impl<'a, I, const N: usize> Unpin for SendTimedEventStream<'a, I, N> where
-	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>>
-{
-}
+	let last_instant = Instant::now();
 
-impl<'a, I, const N: usize> Stream for SendTimedEventStream<'a, I, N>
-where
-	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>>,
-{
-	type Item = ();
-
-	fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-		pin!(async {
+	stream::unfold(
+		(events, next_events, tempo, ticks_per_beat, last_instant),
+		|mut state| async {
 			loop {
-				let Some(next_event) = self.next_events.peek() else {
-					break;
+				let (events, next_events, tempo, ticks_per_beat, last_instant) = &mut state;
+
+				let Some(next_event) = next_events.peek() else {
+					return None;
 				};
 
 				// see if the next event should happen
-				let until_next =
-					ticks_to_duration(self.ticks_per_beat, self.tempo, next_event.ticks);
+				let until_next = ticks_to_duration(*ticks_per_beat, *tempo, next_event.ticks);
 
-				// next note is in the future
-				if until_next > Instant::now() - self.last_instant {
-					break;
-				}
+				Timer::at(*last_instant + until_next).await;
 
-				let event = self.next_events.pop().unwrap();
+				let event = next_events.pop().unwrap();
 
 				// in case the next event involves timing, we must adjust all expectations
 				// based on the current tempo before it changes.
-				self.last_instant += until_next;
+				*last_instant += until_next;
 
 				// this doesn't mess up the heap because everything is decremented by the same
 				// amount
-				self.next_events
+				next_events
 					.iter_mut()
 					.for_each(|nev| nev.ticks -= event.ticks);
 
 				// now that everything has been adjusted to lose the ticks of the current
 				// event, add the next event in the track
-				match self.events[event.track].next() {
+				match events[event.track].next() {
 					Some(Ok(next)) => {
-						self.next_events
+						next_events
 							.push(OrderedEvent {
 								ticks: next.delta.into(),
 								track: event.track,
@@ -257,33 +218,16 @@ where
 
 				match event.kind {
 					TrackEventKind::Midi { channel, message } => {
-						self.note_sender
-							.send(SynthMessage::Midi { channel, message })
-							.await;
+						return Some((SynthMessage::Midi { channel, message }, state));
 					}
-					TrackEventKind::Meta(MetaMessage::Tempo(tempo)) => {
-						self.tempo = tempo.as_int();
+					TrackEventKind::Meta(MetaMessage::Tempo(new)) => {
+						*tempo = new.as_int();
 					}
 					_ => (),
 				};
 			}
-
-			match self.next_events.peek() {
-				Some(next_event) => {
-					Timer::after(ticks_to_duration(
-						self.ticks_per_beat,
-						self.tempo,
-						next_event.ticks,
-					))
-					.await;
-
-					Some(())
-				}
-				None => None,
-			}
-		})
-		.poll(cx)
-	}
+		},
+	)
 }
 
 /// Turn midi ticks into a time span. This should be done as late as possible to account for tempo
