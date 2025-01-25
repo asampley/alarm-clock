@@ -1,42 +1,58 @@
+use embassy_time::Timer;
 use embedded_hal::digital::OutputPin;
 
-use crate::circuit::{buzzer, hal};
+use crate::circuit::{hal, buzzer};
 use crate::message::SynthMessage;
-use crate::MIDI_NOTE_CAPACITY;
+use crate::synth::Synth;
+use crate::{MIDI_NOTE_CAPACITY, SYNTH_NOTES};
 use crate::{error, Receiver};
-
-const BUZZER_NOTES: usize = 32;
 
 #[embassy_executor::task]
 pub async fn update_buzzer(
 	note_receiver: Receiver<SynthMessage, MIDI_NOTE_CAPACITY>,
-	mut buzzer: hal::Buzzer<BUZZER_NOTES>,
+	mut buzzer: hal::Buzzer,
+	mut synth: Synth<SYNTH_NOTES>,
 ) {
 	loop {
-		if buzzer.is_empty() {
-			apply_message(&mut buzzer, note_receiver.receive().await)
+		if synth.is_empty() {
+			apply_message(&mut synth, note_receiver.receive().await)
 		} else {
-			let _ = buzzer.update().await.inspect_err(|e| error!("{:?}", e));
+			let _ = drive_buzzer(&mut synth, &mut buzzer)
+				.await
+				.inspect_err(|e| error!("Error while driving buzzer: {:?}", e));
 
 			match note_receiver.try_receive() {
-				Ok(message) => apply_message(&mut buzzer, message),
+				Ok(message) => apply_message(&mut synth, message),
 				Err(_) => (),
 			}
 		}
 	}
 }
 
-fn apply_message<P: OutputPin, const N: usize>(
-	buzzer: &mut buzzer::Buzzer<P, N>,
+async fn drive_buzzer<P: OutputPin, const N: usize>(
+	synth: &mut Synth<N>,
+	buzzer: &mut buzzer::Buzzer<P>,
+) -> Result<(), P::Error> {
+	if let Some(pulse) = synth.update() {
+		buzzer.set_high()?;
+		embassy_time::block_for(pulse.on);
+		buzzer.set_low()?;
+		Timer::after(pulse.off).await;
+	}
+
+	Ok(())
+}
+
+fn apply_message<const N: usize>(
+	synth: &mut Synth<N>,
 	message: SynthMessage,
 ) {
 	match message {
 		SynthMessage::Midi { channel, message } => {
-			let _ = buzzer
-				.synth
+			let _ = synth
 				.process_midi(channel, message)
 				.inspect_err(|e| error!("Error while processing midi message: {:?}", e));
 		}
-		SynthMessage::Clear => buzzer.clear(),
+		SynthMessage::Clear => synth.stop(),
 	}
 }

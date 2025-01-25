@@ -81,6 +81,7 @@ static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 });
 
 const MIDI_NOTE_CAPACITY: usize = 64;
+const SYNTH_NOTES: usize = 32;
 
 static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
 static EVENT_CHANNEL: Channel<EventMessage, 1> = Channel::new();
@@ -123,7 +124,8 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	esp_hal_embassy::init(timer0.alarm0);
 
 	// create buzzer controller
-	let buzzer = Buzzer::from((p.GPIO14.degrade(), Synth::new(config.synth_config.clone())));
+	let buzzer = Buzzer::from(p.GPIO14.degrade());
+	let synth = Synth::new(config.synth_config.clone());
 
 	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
 
@@ -148,7 +150,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	// start task to update buzzer
-	spawner.spawn(update_buzzer(MIDI_NOTE_CHANNEL.receiver(), buzzer))?;
+	spawner.spawn(update_buzzer(MIDI_NOTE_CHANNEL.receiver(), buzzer, synth))?;
 
 	// start task to read poll button
 	for (function, button) in buttons {

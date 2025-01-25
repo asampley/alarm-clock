@@ -11,15 +11,13 @@ mod xtensa {
 	use esp_hal::i2c::master::{AnyI2c, I2c};
 	use esp_hal::Async;
 
-	use crate::synth::Synth;
-
 	pub type Alphanum = crate::circuit::alphanum::Alphanum<I2c<'static, Async>>;
 	pub type Button = crate::circuit::button::Button<Input<'static>>;
-	pub type Buzzer<const SIZE: usize> = crate::circuit::buzzer::Buzzer<Output<'static>, SIZE>;
+	pub type Buzzer = crate::circuit::buzzer::Buzzer<Output<'static>>;
 
-	impl<const SIZE: usize> From<(AnyPin, Synth<SIZE>)> for Buzzer<SIZE> {
-		fn from((pin, synth): (AnyPin, Synth<SIZE>)) -> Self {
-			Self::new(Output::new(pin, Level::Low), synth)
+	impl From<AnyPin> for Buzzer {
+		fn from(pin: AnyPin) -> Self {
+			Self::new(Output::new(pin, Level::Low))
 		}
 	}
 
