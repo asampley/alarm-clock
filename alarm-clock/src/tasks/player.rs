@@ -1,5 +1,6 @@
 use core::pin::pin;
 
+use crate::midi_dir::Midi;
 use crate::{error, info, warn, Receiver, Sender, MIDI_NOTE_CAPACITY};
 use embassy_time::{Duration, Instant};
 use futures_lite::{stream, FutureExt, Stream, StreamExt};
@@ -16,104 +17,108 @@ use midly::{Format, MetaMessage, TrackEvent};
 
 const TRACK_CAPCITY: usize = 64;
 
+enum State {
+	Playing(Midi),
+	Looping(Midi),
+	Stopped,
+}
+
+impl State {
+	fn next(self) -> Self {
+		match self {
+			Self::Playing(_) => Self::Stopped,
+			_ => self,
+		}
+	}
+}
+
 #[embassy_executor::task]
 pub async fn midi_player(
 	player_receiver: Receiver<PlayerMessage, 1>,
 	note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
 	event_sender: Sender<EventMessage, 1>,
 ) {
-	let mut playing = None;
-	let mut looping = false;
+	let mut state = State::Stopped;
 
 	loop {
-		// stopped loop
-		while playing.is_none() {
-			match player_receiver.receive().await {
-				PlayerMessage::Loop(midi) => {
-					playing = Some(midi);
-					looping = true;
-				}
-				PlayerMessage::Play(midi) => {
-					playing = Some(midi);
-					looping = false;
-				}
-				PlayerMessage::Stop => (),
-			}
-		}
+		state = match state {
+			State::Stopped => match player_receiver.receive().await {
+				PlayerMessage::Loop(midi) => State::Looping(midi),
+				PlayerMessage::Play(midi) => State::Playing(midi),
+				PlayerMessage::Stop => State::Stopped,
+			},
+			State::Playing(ref now_playing) | State::Looping(ref now_playing) => {
+				// load file and set initial variables
+				let (header, tracks) =
+					midly::parse(&now_playing.data).expect("Unable to parse midi file");
 
-		// playing
-		if let Some(ref now_playing) = playing {
-			// load file and set initial variables
-			let (header, tracks) =
-				midly::parse(&now_playing.data).expect("Unable to parse midi file");
+				let ticks_per_beat = if let Timing::Metrical(tpb) = header.timing {
+					tpb.as_int()
+				} else {
+					panic!("Currently only supports metrical time")
+				};
 
-			let tempo = 500_000; // microseconds per beat
-			let ticks_per_beat = if let Timing::Metrical(tpb) = header.timing {
-				tpb.as_int()
-			} else {
-				panic!("Currently only supports metrical time")
-			};
+				let mut events = Vec::<_, TRACK_CAPCITY>::new();
 
-			let mut events = Vec::<_, TRACK_CAPCITY>::new();
-
-			match header.format {
-				Format::SingleTrack | Format::Parallel => {
-					for track in tracks {
-						match track {
-							Err(e) => {
-								error!("Error while reading tracks: {:?}", defmt::Debug2Format(&e))
-							}
-							Ok(event_iter) => {
-								if let Err(_) = events.push(event_iter) {
-									warn!("Midi tracks buffer full, skipping");
-									break;
+				match header.format {
+					Format::SingleTrack | Format::Parallel => {
+						for track in tracks {
+							match track {
+								Err(e) => {
+									error!(
+										"Error while reading tracks: {:?}",
+										defmt::Debug2Format(&e)
+									)
+								}
+								Ok(event_iter) => {
+									if let Err(_) = events.push(event_iter) {
+										warn!("Midi tracks buffer full, skipping");
+										break;
+									}
 								}
 							}
 						}
+
+						info!("Loaded midi file with {} tracks", events.len());
+
+						let mut event_stream =
+							pin!(stream_events_timed(&mut events, ticks_per_beat));
+
+						event_sender
+							.send(SongEvent::Start(now_playing.name).into())
+							.await;
+
+						let res = loop {
+							let event = event_stream.next();
+
+							match async { Either::First(player_receiver.receive().await) }
+								.or(async { Either::Second(event.await) })
+								.await
+							{
+								Either::First(msg) => match msg {
+									PlayerMessage::Loop(midi) => break Some(State::Looping(midi)),
+									PlayerMessage::Play(midi) => break Some(State::Playing(midi)),
+									PlayerMessage::Stop => break Some(State::Stopped),
+								},
+								Either::Second(Some(msg)) => note_sender.send(msg).await,
+								Either::Second(None) => break None,
+							}
+						};
+
+						event_sender
+							.send(SongEvent::End(now_playing.name).into())
+							.await;
+
+						res.unwrap_or_else(|| state.next())
 					}
+					Format::Sequential => {
+						error!("Honestly, you're better off converting this to Single Track or splitting it into multiple files");
 
-					info!("Loaded midi file with {} tracks", events.len());
-
-					let mut event_stream = pin!(stream_events_timed(events, tempo, ticks_per_beat));
-
-					event_sender
-						.send(SongEvent::Start(now_playing.name).into())
-						.await;
-
-					let res = loop {
-						let event = event_stream.next();
-
-						match async { Either::First(player_receiver.receive().await) }
-							.or(async { Either::Second(event.await) })
-							.await
-						{
-							Either::First(msg) => match msg {
-								PlayerMessage::Loop(midi) => break Some((Some(midi), true)),
-								PlayerMessage::Play(midi) => break Some((Some(midi), false)),
-								PlayerMessage::Stop => break Some((None, false)),
-							},
-							Either::Second(Some(msg)) => note_sender.send(msg).await,
-							Either::Second(None) => break None,
-						}
-					};
-
-					event_sender
-						.send(SongEvent::End(now_playing.name).into())
-						.await;
-
-					if let Some(res) = res {
-						(playing, looping) = res;
-					} else {
-						if !looping {
-							playing = None;
-						}
+						State::Stopped
 					}
 				}
-				Format::Sequential => {
-					error!("Honestly, you're better off converting this to Single Track or splitting it into multiple files");
-				}
-			};
-		}
+			}
+		};
 
 		note_sender.send(SynthMessage::Clear).await;
 	}
@@ -148,13 +153,15 @@ impl Ord for OrderedEvent<'_> {
 
 fn stream_events_timed<
 	'a,
-	I: Iterator<Item = Result<TrackEvent<'a>, midly::Error>> + 'static,
+	'event: 'a,
+	I: Iterator<Item = Result<TrackEvent<'event>, midly::Error>>,
 	const N: usize,
 >(
-	mut events: Vec<I, N>,
-	tempo: u32,
+	events: &'a mut Vec<I, N>,
 	ticks_per_beat: u16,
 ) -> impl Stream<Item = SynthMessage> + use<'a, I, N> {
+	let tempo = 500_000; // microseconds per beat
+
 	let mut next_events: BinaryHeap<_, Min, N> = Default::default();
 
 	for (t_i, track_events) in events.iter_mut().enumerate() {
