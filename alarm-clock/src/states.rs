@@ -1,6 +1,6 @@
 use core::fmt;
 
-use embassy_time::{Duration, Timer};
+use embassy_time::{Duration, Instant, Timer};
 
 use embassy_sync::lazy_lock::LazyLock;
 
@@ -8,6 +8,7 @@ use enum_dispatch::enum_dispatch;
 use heapless::{String, Vec};
 
 use crate::circuit::alphanum::BlinkRate;
+use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
 use crate::time::{set_time, TimeRem};
 use crate::timer::timer_remaining;
@@ -17,8 +18,7 @@ use crate::{ClockTime, Sender, ALARM_SONG, ALARM_TIME, MIDI_DIR};
 use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 
 use crate::message::{
-	AlphanumMessage, ButtonDirection, ButtonEvent, ButtonFunction, EventMessage, PlayerMessage,
-	SongEvent, TimerEvent, TimerMessage,
+	AlphanumMessage, ButtonDirection, ButtonEvent, ButtonFunction, EventMessage, PlayerMessage, SensorEvent, SensorMessage, SongEvent, TimerEvent, TimerMessage
 };
 
 static TIMES: LazyLock<Vec<ClockTime, { 24 * 60 }>> = LazyLock::new(|| {
@@ -28,7 +28,7 @@ static TIMES: LazyLock<Vec<ClockTime, { 24 * 60 }>> = LazyLock::new(|| {
 });
 
 async fn send_time<const SIZE: usize>(
-	alphanum_sender: &Sender<AlphanumMessage, SIZE>,
+	alphanum_sender: Sender<AlphanumMessage, SIZE>,
 	time: ClockTime,
 ) {
 	alphanum_sender
@@ -75,6 +75,7 @@ pub trait State {
 			EventMessage::Song(song) => self.song(song).await,
 			EventMessage::Alarm => self.alarm().await,
 			EventMessage::Timer(timer) => self.timer(timer).await,
+			EventMessage::Sensor(sensor) => self.sensor(sensor).await,
 		}
 	}
 
@@ -90,6 +91,10 @@ pub trait State {
 	}
 
 	async fn button(&mut self, _event: ButtonEvent) -> Option<StateTransition> {
+		None
+	}
+
+	async fn sensor(&mut self, _event: SensorEvent) -> Option<StateTransition> {
 		None
 	}
 
@@ -109,6 +114,7 @@ pub enum ConcreteState {
 	StateTimer(StateTimer),
 	StateTimerSet(StateTimerSet),
 	StateTimerRunning(StateTimerRunning),
+	StateSensors(StateSensors),
 	StatePlay(StatePlay),
 }
 
@@ -123,6 +129,7 @@ pub enum StateTransition {
 	Timer,
 	TimerSet,
 	TimerRunning,
+	Sensors,
 	Play,
 }
 
@@ -138,6 +145,7 @@ impl StateTransition {
 			Self::Timer => "Timer",
 			Self::TimerSet => "Timer Set",
 			Self::TimerRunning => "Timer Running",
+			Self::Sensors => "Sensors",
 			Self::Play => "Play",
 		}
 	}
@@ -169,7 +177,7 @@ impl StateClock {
 impl State for StateClock {
 	async fn between_events(&mut self) -> ! {
 		loop {
-			send_time(&mut self.alphanum_sender, ClockTime::now()).await;
+			send_time(self.alphanum_sender, ClockTime::now()).await;
 
 			Timer::after(ClockTime::duration_to_next_minute()).await;
 		}
@@ -208,6 +216,7 @@ impl StateModeSelect {
 				StateTransition::TimerSet,
 				StateTransition::AlarmTime,
 				StateTransition::AlarmSong,
+				StateTransition::Sensors,
 				StateTransition::Play,
 			]),
 		}
@@ -259,7 +268,7 @@ impl StateClockSet {
 
 impl State for StateClockSet {
 	async fn init(&mut self) {
-		send_time(&mut self.alphanum_sender, *self.time_selector.curr()).await;
+		send_time(self.alphanum_sender, *self.time_selector.curr()).await;
 	}
 
 	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
@@ -276,7 +285,7 @@ impl State for StateClockSet {
 						ButtonDirection::Next => self.time_selector.incr(),
 					};
 
-					send_time(&mut self.alphanum_sender, *time).await;
+					send_time(self.alphanum_sender, *time).await;
 
 					None
 				}
@@ -324,7 +333,7 @@ impl State for StateAlarm {
 
 	async fn between_events(&mut self) -> ! {
 		loop {
-			send_time(&mut self.alphanum_sender, ClockTime::now()).await;
+			send_time(self.alphanum_sender, ClockTime::now()).await;
 
 			Timer::after(ClockTime::duration_to_next_minute()).await;
 		}
@@ -354,7 +363,7 @@ impl StateAlarmTimeSet {
 
 impl State for StateAlarmTimeSet {
 	async fn init(&mut self) {
-		send_time(&mut self.alphanum_sender, *self.time_selector.curr()).await;
+		send_time(self.alphanum_sender, *self.time_selector.curr()).await;
 	}
 
 	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
@@ -371,7 +380,7 @@ impl State for StateAlarmTimeSet {
 						ButtonDirection::Next => self.time_selector.incr(),
 					};
 
-					send_time(&mut self.alphanum_sender, *time).await;
+					send_time(self.alphanum_sender, *time).await;
 
 					None
 				}
@@ -547,7 +556,8 @@ impl State for StateTimerRunning {
 
 			let hours = secs > 60 * 60;
 			let timer = format_timer(remaining, hours).await;
-			self.alphanum_sender
+			self
+				.alphanum_sender
 				.send(AlphanumMessage::Static(Calf::Owned(timer)))
 				.await;
 
@@ -688,5 +698,64 @@ impl State for StateTimerSet {
 			},
 			ButtonEvent::Release(_) => None,
 		}
+	}
+}
+
+pub struct StateSensors {
+	request_update: Instant,
+	dht_last: Option<Dht11Reading>,
+	alphanum_sender: Sender<AlphanumMessage, 1>,
+	sensor_sender: Sender<SensorMessage, 1>,
+}
+
+impl StateSensors {
+	pub fn new(
+		alphanum_sender: Sender<AlphanumMessage, 1>,
+		sensor_sender: Sender<SensorMessage, 1>,
+	) -> Self{
+		Self {
+			request_update: Instant::now(),
+			dht_last: None,
+			alphanum_sender,
+			sensor_sender,
+		}
+	}
+}
+
+impl State for StateSensors {
+	async fn between_events(&mut self) -> ! {
+		loop {
+			let now = Instant::now();
+
+			if self.request_update < now {
+				self.sensor_sender.send(SensorMessage::Update).await;
+
+				self.request_update = now + Duration::from_secs(5);
+			}
+
+			let mut message = String::new();
+
+			if let Some(reading) = self.dht_last {
+				use core::fmt::Write;
+				write!(message, "{:>4}", reading.temperature).unwrap();
+			}
+
+			self.alphanum_sender.send(AlphanumMessage::Static(Calf::Owned(message))).await
+		}
+	}
+
+	async fn button(&mut self, event:ButtonEvent) -> Option<StateTransition> {
+		match event {
+			ButtonEvent::Press(ButtonFunction::Select) => Some(StateTransition::Clock),
+			_ => None,
+		}
+	}
+
+	async fn sensor(&mut self, event: SensorEvent) -> Option<StateTransition> {
+		match event {
+			SensorEvent::Dht(reading) => self.dht_last = Some(reading),
+		}
+
+		None
 	}
 }

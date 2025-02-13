@@ -1,11 +1,12 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(never_type)]
+#![feature(precise_capturing_in_traits)]
 
 use defmt_rtt as _;
 use esp_backtrace as _;
 
-pub use defmt::{error, info, trace, warn};
+pub use defmt::{debug, error, info, trace, warn};
 
 use embassy_executor::{SpawnError, Spawner};
 
@@ -18,17 +19,18 @@ use esp_hal::gpio::Pin;
 
 use futures_lite::FutureExt;
 
+use tasks::sensors::sensor_task;
 use thiserror::Error;
 
 pub mod circuit;
-use circuit::hal::{Alphanum, Button, Buzzer};
+use circuit::hal::{Alphanum, Button, Buzzer, Dht11};
 
 pub mod tweaks;
 use tweaks::Config;
 
 pub mod message;
 use message::TimerMessage;
-use message::{AlphanumMessage, EventMessage, PlayerMessage, SongEvent, SynthMessage};
+use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SongEvent, SynthMessage};
 use message::{ButtonDirection, ButtonFunction};
 
 pub mod midi_dir;
@@ -43,7 +45,7 @@ use synth::Synth;
 pub mod states;
 use states::{
 	ConcreteState, State, StateAlarmSongSet, StateAlarmTimeSet, StateClock, StateClockSet,
-	StateModeSelect, StatePlay, StateTimerRunning, StateTransition,
+	StateModeSelect, StatePlay, StateSensors, StateTimerRunning, StateTransition,
 };
 
 pub mod tasks;
@@ -87,6 +89,7 @@ static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
 static EVENT_CHANNEL: Channel<EventMessage, 1> = Channel::new();
 static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
 static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
+static SENSOR_CHANNEL: Channel<SensorMessage, 1> = Channel::new();
 static TIMER_CHANNEL: Channel<TimerMessage, 1> = Channel::new();
 
 #[derive(Debug, Error)]
@@ -149,6 +152,8 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	alphanum.set_brightness(config.brightness).await?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
+	let humid_temp = Dht11::from(p.GPIO13.degrade());
+
 	// start task to update buzzer
 	spawner.spawn(update_buzzer(MIDI_NOTE_CHANNEL.receiver(), buzzer, synth))?;
 
@@ -173,6 +178,9 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	// start timer task
 	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
 
+	// start sensors task
+	spawner.spawn(sensor_task(humid_temp, SENSOR_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
+
 	let mut state_transition = StateTransition::Clock;
 
 	let event_receiver = EVENT_CHANNEL.receiver();
@@ -180,7 +188,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	loop {
 		info!("Entering state {:?}", state_transition);
 
-		let mut state: ConcreteState = match state_transition {
+		let state: ConcreteState = match state_transition {
 			StateTransition::Clock => {
 				StateClock::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
@@ -205,36 +213,45 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			StateTransition::TimerRunning => {
 				StateTimerRunning::new(ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
 			}
-		};
-
-		state.init().await;
-
-		state_transition = loop {
-			match event_receiver
-				.receive()
-				.or(async { state.between_events().await })
-				.await
-			{
-				msg => {
-					match &msg {
-						EventMessage::Song(event) => match event {
-							SongEvent::Start(name) => {
-								info!("Now playing {:?}", name);
-							}
-							SongEvent::End(name) => {
-								info!("Stopped playing {:?}", name);
-							}
-						},
-						_ => (),
-					}
-
-					if let Some(next_state) = state.event(msg).await {
-						break next_state;
-					}
-				}
+			StateTransition::Sensors => {
+				StateSensors::new(ALPHANUM_CHANNEL.sender(), SENSOR_CHANNEL.sender()).into()
 			}
 		};
 
-		state.finish().await;
+		state_transition = process_state(state, &event_receiver).await;
 	}
+}
+
+async fn process_state(mut state: impl State, event_receiver: &Receiver<EventMessage, 1>) -> StateTransition {
+	state.init().await;
+
+	let state_transition = loop {
+		match event_receiver
+			.receive()
+			.or(async { state.between_events().await })
+			.await
+		{
+			msg => {
+				match &msg {
+					EventMessage::Song(event) => match event {
+						SongEvent::Start(name) => {
+							info!("Now playing {:?}", name);
+						}
+						SongEvent::End(name) => {
+							info!("Stopped playing {:?}", name);
+						}
+					},
+					_ => (),
+				}
+
+				if let Some(next_state) = state.event(msg).await {
+					break next_state;
+				}
+			}
+		}
+	};
+
+	state.finish().await;
+
+	state_transition
 }

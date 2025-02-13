@@ -7,13 +7,23 @@ mod xtensa {
 
 	use embedded_hal::i2c::ErrorType;
 
-	use esp_hal::gpio::{AnyPin, Input, Level, Output, Pull};
+	use esp_hal::gpio::{AnyPin, Flex, Input, Level, Output, Pull};
 	use esp_hal::i2c::master::{AnyI2c, I2c};
 	use esp_hal::Async;
 
 	pub type Alphanum = crate::circuit::alphanum::Alphanum<I2c<'static, Async>>;
 	pub type Button = crate::circuit::button::Button<Input<'static>>;
 	pub type Buzzer = crate::circuit::buzzer::Buzzer<Output<'static>>;
+	pub type Dht11 = crate::circuit::dht::Dht11<Flex<'static>>;
+
+	impl From<AnyPin> for Dht11 {
+		fn from(pin: AnyPin) -> Self {
+			let mut flex = Flex::new(pin);
+			flex.set_as_open_drain(Pull::Up);
+
+			Self::new(flex)
+		}
+	}
 
 	impl From<AnyPin> for Buzzer {
 		fn from(pin: AnyPin) -> Self {

@@ -3,6 +3,7 @@ use midly::num::u4;
 use midly::MidiMessage;
 
 use crate::circuit::alphanum::BlinkRate;
+use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
 use crate::util::Calf;
 
@@ -11,6 +12,7 @@ pub enum EventMessage {
 	Button(ButtonEvent),
 	Song(SongEvent),
 	Timer(TimerEvent),
+	Sensor(SensorEvent),
 	Alarm,
 }
 
@@ -63,6 +65,11 @@ impl From<TimerEvent> for EventMessage {
 }
 
 #[derive(Debug)]
+pub enum SensorEvent {
+	Dht(Dht11Reading),
+}
+
+#[derive(Debug)]
 pub enum SynthMessage {
 	Midi { channel: u4, message: MidiMessage },
 	Clear,
@@ -82,10 +89,14 @@ pub enum TimerMessage {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum AlphanumMessage {
 	Static(Calf<'static, String<4>>),
 	Loop(&'static str),
 	Empty,
 	Blink(BlinkRate),
+}
+
+#[derive(Debug)]
+pub enum SensorMessage {
+	Update,
 }
