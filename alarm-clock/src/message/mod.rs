@@ -1,3 +1,4 @@
+use defmt::Format;
 use embassy_time::Instant;
 use heapless::String;
 use midly::num::u4;
@@ -8,7 +9,7 @@ use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
 use crate::util::Calf;
 
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum EventMessage {
 	Button(ButtonEvent),
 	Song(SongEvent),
@@ -17,7 +18,7 @@ pub enum EventMessage {
 	Alarm,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum ButtonEvent {
 	Press(ButtonFunction),
 	Release(ButtonFunction),
@@ -29,19 +30,19 @@ impl From<ButtonEvent> for EventMessage {
 	}
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Format, PartialEq)]
 pub enum ButtonFunction {
 	Direction(ButtonDirection),
 	Select,
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, Format, PartialEq)]
 pub enum ButtonDirection {
 	Prev,
 	Next,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum SongEvent {
 	Start(&'static str),
 	End(&'static str),
@@ -53,7 +54,7 @@ impl From<SongEvent> for EventMessage {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum TimerEvent {
 	Start(Instant),
 	End,
@@ -65,7 +66,7 @@ impl From<TimerEvent> for EventMessage {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum SensorEvent {
 	Dht(Dht11Reading),
 }

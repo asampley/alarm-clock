@@ -45,9 +45,8 @@ impl ClockTime {
 				(self - ClockTime::now() - ClockTime::new(1)).minutes as u64 * 60,
 			) + Self::duration_to_next_minute();
 
-			match time_zero.changed().with_timeout(wait_time).await {
-				Err(TimeoutError) => break,
-				Ok(_) => (),
+			if let Err(TimeoutError) = time_zero.changed().with_timeout(wait_time).await {
+				break;
 			}
 		}
 	}

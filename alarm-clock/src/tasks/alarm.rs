@@ -1,9 +1,18 @@
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use futures_lite::FutureExt;
 
+use embassy_sync::watch;
+
 use crate::message::EventMessage;
+use crate::time::ClockTime;
 use crate::util::Either;
-use crate::ALARM_TIME;
-use crate::{info, Sender};
+use crate::{info, Sender, Watch};
+
+static ALARM_TIME: Watch<ClockTime, 1> = Watch::new();
+
+pub fn alarm_setter() -> watch::Sender<'static, CriticalSectionRawMutex, ClockTime, 1> {
+	ALARM_TIME.sender()
+}
 
 #[embassy_executor::task]
 pub async fn alarm_task(event_channel: Sender<EventMessage, 1>) {

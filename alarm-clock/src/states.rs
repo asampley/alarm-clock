@@ -8,10 +8,11 @@ use heapless::{String, Vec};
 use crate::circuit::alphanum::BlinkRate;
 use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
+use crate::tasks::alarm::alarm_setter;
 use crate::tasks::timer::TIMERS;
 use crate::time::{set_time, time_since, time_until, TimeRem};
 use crate::util::Calf;
-use crate::{ClockTime, Sender, ALARM_SONG, ALARM_TIME, MIDI_DIR};
+use crate::{ClockTime, Sender, ALARM_SONG, MIDI_DIR};
 
 use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 
@@ -22,7 +23,7 @@ use crate::message::{
 
 static TIMES: LazyLock<Vec<ClockTime, { 24 * 60 }>> = LazyLock::new(|| {
 	(0..24 * 60)
-		.map(|i| ClockTime::new(i))
+		.map(ClockTime::new)
 		.collect::<Vec<_, { 24 * 60 }>>()
 });
 
@@ -104,18 +105,18 @@ pub trait State {
 
 #[enum_dispatch(State)]
 pub enum ConcreteState {
-	StateClock(StateClock),
-	StateMainMenu(StateMainMenu),
-	StateClockSet(StateClockSet),
-	StateAlarm(StateAlarm),
-	StateAlarmTime(StateAlarmTimeSet),
-	StateAlarmSong(StateAlarmSongSet),
-	StateTimer(StateTimer),
-	StateTimerSet(StateTimerSet),
-	StateTimerRunning(StateTimerRunning),
-	StateTimerMenu(StateTimerMenu),
-	StateSensors(StateSensors),
-	StatePlay(StatePlay),
+	Clock(StateClock),
+	MainMenu(StateMainMenu),
+	ClockSet(StateClockSet),
+	Alarm(StateAlarm),
+	AlarmTime(StateAlarmTimeSet),
+	AlarmSong(StateAlarmSongSet),
+	Timer(StateTimer),
+	TimerSet(StateTimerSet),
+	TimerRunning(StateTimerRunning),
+	TimerMenu(StateTimerMenu),
+	Sensors(StateSensors),
+	Play(StatePlay),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -219,7 +220,7 @@ pub struct StateMainMenu {
 
 impl StateMainMenu {
 	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
-		const MAIN_MENU: &'static [MenuItem<StateTransition>] = &[
+		const MAIN_MENU: &[MenuItem<StateTransition>] = &[
 			MenuItem::leaf("Back", StateTransition::Clock),
 			MenuItem::leaf("Clock Set", StateTransition::ClockSet),
 			MenuItem::leaf("Timer Set", StateTransition::TimerSet),
@@ -291,7 +292,7 @@ impl StateClockSet {
 	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
 		Self {
 			alphanum_sender,
-			time_selector: BinarySelector::new(&TIMES.get()),
+			time_selector: BinarySelector::new(TIMES.get()),
 		}
 	}
 }
@@ -386,7 +387,7 @@ impl StateAlarmTimeSet {
 	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
 		Self {
 			alphanum_sender,
-			time_selector: BinarySelector::new(&TIMES.get()),
+			time_selector: BinarySelector::new(TIMES.get()),
 		}
 	}
 }
@@ -400,7 +401,7 @@ impl State for StateAlarmTimeSet {
 		match event {
 			ButtonEvent::Press(function) => match function {
 				ButtonFunction::Select => {
-					ALARM_TIME.sender().send(*self.time_selector.curr());
+					alarm_setter().send(*self.time_selector.curr());
 
 					Some(StateTransition::Clock)
 				}
@@ -669,7 +670,7 @@ impl State for StateTimer {
 				.lock()
 				.await
 				.first_timer()
-				.and_then(|t| time_since(t))
+				.and_then(time_since)
 				.unwrap_or(Duration::from_ticks(0));
 
 			let secs = since.as_secs();
@@ -871,7 +872,7 @@ impl StateTimerMenu {
 		alphanum_sender: Sender<AlphanumMessage, 1>,
 		timer_sender: Sender<TimerMessage, 1>,
 	) -> Self {
-		const TIMER_MENU: &'static [MenuItem<TimerMenuItem>] = &[
+		const TIMER_MENU: &[MenuItem<TimerMenuItem>] = &[
 			MenuItem::leaf("Back", TimerMenuItem::Back),
 			MenuItem::leaf("Delete", TimerMenuItem::Delete),
 		];

@@ -15,7 +15,7 @@ pub fn freq_table(
 
 	let mut tokens = TokenStream::new();
 
-	let size: usize = std::u8::MAX as usize / 2 + 1;
+	let size: usize = u8::MAX as usize / 2 + 1;
 
 	loop {
 		match items.next() {

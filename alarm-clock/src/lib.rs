@@ -30,28 +30,26 @@ use tweaks::Config;
 
 pub mod message;
 use message::TimerMessage;
-use message::{
-	AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SongEvent, SynthMessage,
-};
+use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SynthMessage};
 use message::{ButtonDirection, ButtonFunction};
 
-pub mod midi_dir;
+mod midi_dir;
 use midi_dir::Midi;
 use midi_dir::MIDI_DIR;
 
-pub mod selector;
+mod selector;
 
-pub mod synth;
+mod synth;
 use synth::Synth;
 
-pub mod states;
+mod states;
 use states::{
 	ConcreteState, State, StateAlarm, StateAlarmSongSet, StateAlarmTimeSet, StateClock,
 	StateClockSet, StateMainMenu, StatePlay, StateSensors, StateTimer, StateTimerMenu,
 	StateTimerRunning, StateTimerSet, StateTransition,
 };
 
-pub mod tasks;
+mod tasks;
 use tasks::alarm::alarm_task;
 use tasks::alphanum::alphanum_task;
 use tasks::buzzer::update_buzzer;
@@ -59,10 +57,10 @@ use tasks::input::poll_input;
 use tasks::player::midi_player;
 use tasks::timer::timer_task;
 
-pub mod time;
+mod time;
 use time::ClockTime;
 
-pub mod util;
+mod util;
 
 type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CriticalSectionRawMutex, T, CAP>;
 type Sender<T, const CAP: usize> =
@@ -73,7 +71,6 @@ type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
 
 // an instant that marks midnight
-static ALARM_TIME: Watch<ClockTime, 1> = Watch::new();
 static ALARM_SONG: Mutex<Midi> = Mutex::new(MIDI_DIR[0]);
 static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 	serde_json_core::from_str(include_str!("../tweaks.json"))
@@ -241,28 +238,15 @@ async fn process_state(
 	state.init().await;
 
 	let state_transition = loop {
-		match event_receiver
+		let msg = event_receiver
 			.receive()
 			.or(async { state.between_events().await })
-			.await
-		{
-			msg => {
-				match &msg {
-					EventMessage::Song(event) => match event {
-						SongEvent::Start(name) => {
-							info!("Now playing {:?}", name);
-						}
-						SongEvent::End(name) => {
-							info!("Stopped playing {:?}", name);
-						}
-					},
-					_ => (),
-				}
+			.await;
 
-				if let Some(next_state) = state.event(msg).await {
-					break next_state;
-				}
-			}
+		info!("Event {:?}", msg);
+
+		if let Some(next_state) = state.event(msg).await {
+			break next_state;
 		}
 	};
 

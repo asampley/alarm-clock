@@ -48,7 +48,7 @@ pub async fn alphanum_task(mut alphanum: Alphanum, receiver: Receiver<AlphanumMe
 				}
 				AlphanumMessage::Empty => {
 					let _ = alphanum
-						.display(&BLANKS)
+						.display(BLANKS)
 						.await
 						.inspect_err(|e| error!("{:?}", e));
 					text_mode = TextMode::Static;

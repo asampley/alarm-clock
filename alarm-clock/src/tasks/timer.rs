@@ -52,10 +52,6 @@ impl<const SIZE: usize> Timers<SIZE> {
 	pub fn len(&self) -> usize {
 		self.timers.len()
 	}
-
-	pub fn as_slice(&self) -> &[Instant] {
-		&*self.timers
-	}
 }
 
 #[embassy_executor::task]

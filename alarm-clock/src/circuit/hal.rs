@@ -31,18 +31,19 @@ mod xtensa {
 		}
 	}
 
-	impl<'a> From<(AnyPin, Duration)> for Button {
+	impl From<(AnyPin, Duration)> for Button {
 		fn from((pin, bounce_time): (AnyPin, Duration)) -> Self {
 			Self::new(Input::new(pin, Pull::Up), bounce_time)
 		}
 	}
 
-	impl<'a> Alphanum {
+	impl Alphanum {
 		pub fn new_esp_hal(
 			pin: AnyI2c,
 			sda: AnyPin,
 			scl: AnyPin,
-		) -> Result<Self, <esp_hal::i2c::master::I2c<'a, esp_hal::Async> as ErrorType>::Error> {
+		) -> Result<Self, <esp_hal::i2c::master::I2c<'static, esp_hal::Async> as ErrorType>::Error>
+		{
 			Self::new(
 				esp_hal::i2c::master::I2c::new(pin, Default::default())
 					.unwrap()

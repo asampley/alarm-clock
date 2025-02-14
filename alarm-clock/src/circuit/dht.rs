@@ -79,10 +79,10 @@ impl<Pin: InputPin + OutputPin + Wait> Dht<Pin> {
 
 		self.pin.wait_for_rising_edge().await?;
 
-		for i in 0..N {
-			output[i] = self.read_byte().await?;
+		for byte in &mut output {
+			*byte = self.read_byte().await?;
 
-			debug!("Read byte {:?}", output[i]);
+			debug!("Read byte {:?}", byte);
 		}
 
 		self.pin.set_high()?;
@@ -102,10 +102,10 @@ impl<Pin: InputPin + OutputPin + Wait> Dht<Pin> {
 		while self.pin.is_high()? {}
 		while self.pin.is_low()? {}
 
-		for i in 0..N {
-			output[i] = self.read_byte_sync()?;
+		for byte in &mut output {
+			*byte = self.read_byte_sync()?;
 
-			debug!("Read byte {:?}", output[i]);
+			debug!("Read byte {:?}", byte);
 		}
 
 		self.pin.set_high()?;

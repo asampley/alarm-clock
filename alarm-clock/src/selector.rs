@@ -21,7 +21,7 @@ impl<'a, T> LinearSelector<'a, T> {
 	}
 }
 
-impl<'a, T> Selector<T> for LinearSelector<'a, T> {
+impl<T> Selector<T> for LinearSelector<'_, T> {
 	fn incr(&mut self) -> &T {
 		self.curr = (self.curr + 1) % self.list.len();
 		self.curr()
@@ -74,7 +74,7 @@ impl<'a, T> BinarySelector<'a, T> {
 	}
 }
 
-impl<'a, T> Selector<T> for BinarySelector<'a, T> {
+impl<T> Selector<T> for BinarySelector<'_, T> {
 	fn incr(&mut self) -> &T {
 		self.bound = match self.bound {
 			Bound::Single(i) => Bound::Single((i + 1) % self.len()),
@@ -139,7 +139,9 @@ impl Selector<usize> for ExponentialSelector {
 	fn incr(&mut self) -> &usize {
 		match self {
 			Self::Increasing { value } => {
-				value.checked_shl(1).map(|new| *value = new);
+				if let Some(new) = value.checked_shl(1) {
+					*value = new;
+				}
 			}
 			Self::Tuning { value, digit } => {
 				if *digit == 0 {

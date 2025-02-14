@@ -50,7 +50,7 @@ pub async fn midi_player(
 			State::Playing(ref now_playing) | State::Looping(ref now_playing) => {
 				// load file and set initial variables
 				let (header, tracks) =
-					midly::parse(&now_playing.data).expect("Unable to parse midi file");
+					midly::parse(now_playing.data).expect("Unable to parse midi file");
 
 				let ticks_per_beat = if let Timing::Metrical(tpb) = header.timing {
 					tpb.as_int()
@@ -71,7 +71,7 @@ pub async fn midi_player(
 									)
 								}
 								Ok(event_iter) => {
-									if let Err(_) = events.push(event_iter) {
+									if events.push(event_iter).is_err() {
 										warn!("Midi tracks buffer full, skipping");
 										break;
 									}
@@ -141,7 +141,7 @@ impl Eq for OrderedEvent<'_> {}
 
 impl PartialOrd for OrderedEvent<'_> {
 	fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
-		Some(self.cmp(&other))
+		Some(self.cmp(other))
 	}
 }
 
@@ -186,9 +186,7 @@ fn stream_events_timed<
 			loop {
 				let (events, next_events, tempo, ticks_per_beat, last_instant) = &mut state;
 
-				let Some(next_event) = next_events.peek() else {
-					return None;
-				};
+				let next_event = next_events.peek()?;
 
 				// see if the next event should happen
 				let until_next = ticks_to_duration(*ticks_per_beat, *tempo, next_event.ticks);

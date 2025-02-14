@@ -72,7 +72,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 	pub fn process_midi(&mut self, channel: u4, message: MidiMessage) -> Result<(), ()> {
 		const ZERO: u7 = u7::new(0);
 
-		Ok(match message {
+		match message {
 			MidiMessage::NoteOff { key, .. } | MidiMessage::NoteOn { key, vel: ZERO } => {
 				self.release_note(&SoundKey { channel, key })
 			}
@@ -86,7 +86,9 @@ impl<const NOTES: usize> Synth<NOTES> {
 				self.instruments[usize::from(channel.as_int())] = program
 			}
 			_ => (),
-		})
+		}
+
+		Ok(())
 	}
 
 	fn process_controller(&mut self, _channel: u4, controller: u7, _value: u7) {
@@ -121,9 +123,9 @@ impl<const NOTES: usize> Synth<NOTES> {
 	}
 
 	fn release_note(&mut self, sound_key: &SoundKey) {
-		self.notes
-			.get_mut(sound_key)
-			.map(|(s, _)| s.amplitude.release());
+		if let Some((s, _)) = self.notes.get_mut(sound_key) {
+			s.amplitude.release();
+		}
 	}
 
 	pub fn stop(&mut self) {

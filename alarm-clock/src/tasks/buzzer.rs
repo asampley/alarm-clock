@@ -21,9 +21,8 @@ pub async fn update_buzzer(
 				.await
 				.inspect_err(|e| error!("Error while driving buzzer: {:?}", e));
 
-			match note_receiver.try_receive() {
-				Ok(message) => apply_message(&mut synth, message),
-				Err(_) => (),
+			if let Ok(message) = note_receiver.try_receive() {
+				apply_message(&mut synth, message);
 			}
 		}
 	}

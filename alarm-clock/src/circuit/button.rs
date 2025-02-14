@@ -15,7 +15,7 @@ impl<Pin> Button<Pin> {
 	pub fn new(pin: Pin, bounce_time: Duration) -> Self {
 		Self {
 			pin,
-			bounce_time: bounce_time,
+			bounce_time,
 			last_event: None,
 		}
 	}
