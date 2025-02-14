@@ -1,11 +1,11 @@
 use embassy_time::Timer;
 use embedded_hal::digital::OutputPin;
 
-use crate::circuit::{hal, buzzer};
+use crate::circuit::{buzzer, hal};
 use crate::message::SynthMessage;
 use crate::synth::Synth;
-use crate::{MIDI_NOTE_CAPACITY, SYNTH_NOTES};
 use crate::{error, Receiver};
+use crate::{MIDI_NOTE_CAPACITY, SYNTH_NOTES};
 
 #[embassy_executor::task]
 pub async fn update_buzzer(
@@ -43,10 +43,7 @@ async fn drive_buzzer<P: OutputPin, const N: usize>(
 	Ok(())
 }
 
-fn apply_message<const N: usize>(
-	synth: &mut Synth<N>,
-	message: SynthMessage,
-) {
+fn apply_message<const N: usize>(synth: &mut Synth<N>, message: SynthMessage) {
 	match message {
 		SynthMessage::Midi { channel, message } => {
 			let _ = synth

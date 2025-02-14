@@ -12,6 +12,14 @@ pub async fn set_time(time: ClockTime) {
 		.send(Instant::now().clock_sub(Duration::from_secs(time.minutes as u64 * 60)));
 }
 
+pub fn time_until(time: Instant) -> Option<Duration> {
+	time.checked_duration_since(Instant::now())
+}
+
+pub fn time_since(time: Instant) -> Option<Duration> {
+	Instant::now().checked_duration_since(time)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClockTime {
 	minutes: u16,

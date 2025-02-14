@@ -1,5 +1,3 @@
-use core::fmt;
-
 use embassy_time::{Duration, Instant, Timer};
 
 use embassy_sync::lazy_lock::LazyLock;
@@ -10,15 +8,16 @@ use heapless::{String, Vec};
 use crate::circuit::alphanum::BlinkRate;
 use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
-use crate::time::{set_time, TimeRem};
-use crate::timer::timer_remaining;
+use crate::tasks::timer::TIMERS;
+use crate::time::{set_time, time_since, time_until, TimeRem};
 use crate::util::Calf;
 use crate::{ClockTime, Sender, ALARM_SONG, ALARM_TIME, MIDI_DIR};
 
 use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 
 use crate::message::{
-	AlphanumMessage, ButtonDirection, ButtonEvent, ButtonFunction, EventMessage, PlayerMessage, SensorEvent, SensorMessage, SongEvent, TimerEvent, TimerMessage
+	AlphanumMessage, ButtonDirection, ButtonEvent, ButtonFunction, EventMessage, PlayerMessage,
+	SensorEvent, SensorMessage, SongEvent, TimerEvent, TimerMessage,
 };
 
 static TIMES: LazyLock<Vec<ClockTime, { 24 * 60 }>> = LazyLock::new(|| {
@@ -81,7 +80,7 @@ pub trait State {
 
 	async fn timer(&mut self, event: TimerEvent) -> Option<StateTransition> {
 		match event {
-			TimerEvent::Start => None,
+			TimerEvent::Start(time) => Some(StateTransition::TimerRunning(time)),
 			TimerEvent::End => Some(StateTransition::Timer),
 		}
 	}
@@ -106,7 +105,7 @@ pub trait State {
 #[enum_dispatch(State)]
 pub enum ConcreteState {
 	StateClock(StateClock),
-	StateModeSelect(StateModeSelect),
+	StateMainMenu(StateMainMenu),
 	StateClockSet(StateClockSet),
 	StateAlarm(StateAlarm),
 	StateAlarmTime(StateAlarmTimeSet),
@@ -114,47 +113,25 @@ pub enum ConcreteState {
 	StateTimer(StateTimer),
 	StateTimerSet(StateTimerSet),
 	StateTimerRunning(StateTimerRunning),
+	StateTimerMenu(StateTimerMenu),
 	StateSensors(StateSensors),
 	StatePlay(StatePlay),
 }
 
-#[derive(Clone, Copy, Debug, defmt::Format)]
+#[derive(Clone, Copy, Debug)]
 pub enum StateTransition {
 	Clock,
-	ModeSelect,
+	MainMenu,
 	ClockSet,
 	Alarm,
 	AlarmTime,
 	AlarmSong,
 	Timer,
 	TimerSet,
-	TimerRunning,
+	TimerRunning(Instant),
+	TimerMenu(Instant),
 	Sensors,
 	Play,
-}
-
-impl StateTransition {
-	fn as_str(&self) -> &'static str {
-		match self {
-			Self::Clock => "Clock",
-			Self::ModeSelect => "Mode Select",
-			Self::ClockSet => "Clock Set",
-			Self::Alarm => "Alarm",
-			Self::AlarmTime => "Alarm Time",
-			Self::AlarmSong => "Alarm Song",
-			Self::Timer => "Timer",
-			Self::TimerSet => "Timer Set",
-			Self::TimerRunning => "Timer Running",
-			Self::Sensors => "Sensors",
-			Self::Play => "Play",
-		}
-	}
-}
-
-impl fmt::Display for StateTransition {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		write!(f, "{}", self.as_str())
-	}
 }
 
 pub struct StateClock {
@@ -189,11 +166,17 @@ impl State for StateClock {
 				self.player_sender.send(PlayerMessage::Stop).await;
 
 				match function {
-					ButtonFunction::Select => Some(StateTransition::ModeSelect),
-					ButtonFunction::Direction(_) => match timer_remaining() {
-						Some(_) => Some(StateTransition::TimerRunning),
-						None => None,
-					},
+					ButtonFunction::Select => Some(StateTransition::MainMenu),
+					ButtonFunction::Direction(dir) => {
+						let lock = TIMERS.lock().await;
+
+						let instant = match dir {
+							ButtonDirection::Prev => lock.last_timer(),
+							ButtonDirection::Next => lock.first_timer(),
+						};
+
+						instant.map(StateTransition::TimerRunning)
+					}
 				}
 			}
 			ButtonEvent::Release(_) => None,
@@ -201,47 +184,94 @@ impl State for StateClock {
 	}
 }
 
-pub struct StateModeSelect {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	mode_selector: LinearSelector<'static, StateTransition>,
+#[derive(Debug)]
+struct MenuItem<T: 'static> {
+	name: &'static str,
+	items: MenuContents<T>,
 }
 
-impl StateModeSelect {
-	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
+impl<T> MenuItem<T> {
+	const fn leaf(name: &'static str, leaf: T) -> Self {
 		Self {
-			alphanum_sender,
-			mode_selector: LinearSelector::new(&[
-				StateTransition::Clock,
-				StateTransition::ClockSet,
-				StateTransition::TimerSet,
-				StateTransition::AlarmTime,
-				StateTransition::AlarmSong,
-				StateTransition::Sensors,
-				StateTransition::Play,
-			]),
+			name,
+			items: MenuContents::Leaf(leaf),
+		}
+	}
+
+	const fn menu(name: &'static str, items: &'static [Self]) -> Self {
+		Self {
+			name,
+			items: MenuContents::Menu(items),
 		}
 	}
 }
 
-impl State for StateModeSelect {
+#[derive(Debug)]
+enum MenuContents<T: 'static> {
+	Leaf(T),
+	Menu(&'static [MenuItem<T>]),
+}
+
+pub struct StateMainMenu {
+	alphanum_sender: Sender<AlphanumMessage, 1>,
+	mode_selector: LinearSelector<'static, MenuItem<StateTransition>>,
+}
+
+impl StateMainMenu {
+	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
+		const MAIN_MENU: &'static [MenuItem<StateTransition>] = &[
+			MenuItem::leaf("Back", StateTransition::Clock),
+			MenuItem::leaf("Clock Set", StateTransition::ClockSet),
+			MenuItem::leaf("Timer Set", StateTransition::TimerSet),
+			MenuItem::menu(
+				"Alarm",
+				&[
+					MenuItem::leaf("Time", StateTransition::AlarmTime),
+					MenuItem::leaf("Song", StateTransition::AlarmSong),
+					MenuItem::leaf("Exit", StateTransition::Clock),
+				],
+			),
+			MenuItem::leaf("Sensors", StateTransition::Sensors),
+			MenuItem::leaf("Play", StateTransition::Play),
+		];
+
+		Self {
+			alphanum_sender,
+			mode_selector: LinearSelector::new(MAIN_MENU),
+		}
+	}
+}
+
+impl State for StateMainMenu {
 	async fn init(&mut self) {
 		self.alphanum_sender
-			.send(AlphanumMessage::Loop(self.mode_selector.curr().as_str()))
+			.send(AlphanumMessage::Loop(self.mode_selector.curr().name))
 			.await
 	}
 
 	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
 		match event {
 			ButtonEvent::Press(function) => match function {
-				ButtonFunction::Select => Some(*self.mode_selector.curr()),
+				ButtonFunction::Select => match self.mode_selector.curr().items {
+					MenuContents::Leaf(state) => Some(state),
+					MenuContents::Menu(items) => {
+						self.mode_selector = LinearSelector::new(items);
+
+						self.alphanum_sender
+							.send(AlphanumMessage::Loop(self.mode_selector.curr().name))
+							.await;
+
+						None
+					}
+				},
 				ButtonFunction::Direction(dir) => {
-					let state = match dir {
+					let menu_item = match dir {
 						ButtonDirection::Prev => self.mode_selector.decr(),
 						ButtonDirection::Next => self.mode_selector.incr(),
 					};
 
 					self.alphanum_sender
-						.send(AlphanumMessage::Loop(state.as_str()))
+						.send(AlphanumMessage::Loop(menu_item.name))
 						.await;
 
 					None
@@ -531,18 +561,15 @@ impl State for StatePlay {
 }
 
 pub struct StateTimerRunning {
+	timer_instant: Instant,
 	alphanum_sender: Sender<AlphanumMessage, 1>,
-	timer_sender: Sender<TimerMessage, 1>,
 }
 
 impl StateTimerRunning {
-	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		timer_sender: Sender<TimerMessage, 1>,
-	) -> Self {
+	pub fn new(timer_instant: Instant, alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
 		Self {
+			timer_instant,
 			alphanum_sender,
-			timer_sender,
 		}
 	}
 }
@@ -550,14 +577,13 @@ impl StateTimerRunning {
 impl State for StateTimerRunning {
 	async fn between_events(&mut self) -> ! {
 		loop {
-			let remaining = timer_remaining().unwrap_or(Duration::from_ticks(0));
+			let remaining = time_until(self.timer_instant).unwrap_or(Duration::from_ticks(0));
 
 			let secs = remaining.as_secs();
 
 			let hours = secs > 60 * 60;
 			let timer = format_timer(remaining, hours).await;
-			self
-				.alphanum_sender
+			self.alphanum_sender
 				.send(AlphanumMessage::Static(Calf::Owned(timer)))
 				.await;
 
@@ -572,12 +598,27 @@ impl State for StateTimerRunning {
 	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
 		match event {
 			ButtonEvent::Press(function) => match function {
-				ButtonFunction::Select => {
-					self.timer_sender.send(TimerMessage::Cancel).await;
-
-					Some(StateTransition::Clock)
-				}
-				ButtonFunction::Direction(_) => Some(StateTransition::Clock),
+				ButtonFunction::Select => Some(StateTransition::TimerMenu(self.timer_instant)),
+				ButtonFunction::Direction(dir) => match dir {
+					ButtonDirection::Prev => {
+						match TIMERS.lock().await.prev_timer(self.timer_instant) {
+							Some(instant) => {
+								self.timer_instant = instant;
+								None
+							}
+							None => Some(StateTransition::Clock),
+						}
+					}
+					ButtonDirection::Next => {
+						match TIMERS.lock().await.next_timer(self.timer_instant) {
+							Some(instant) => {
+								self.timer_instant = instant;
+								None
+							}
+							None => Some(StateTransition::Clock),
+						}
+					}
+				},
 			},
 			ButtonEvent::Release(_) => None,
 		}
@@ -587,16 +628,19 @@ impl State for StateTimerRunning {
 pub struct StateTimer {
 	alphanum_sender: Sender<AlphanumMessage, 1>,
 	player_sender: Sender<PlayerMessage, 1>,
+	timer_sender: Sender<TimerMessage, 1>,
 }
 
 impl StateTimer {
 	pub fn new(
 		alphanum_sender: Sender<AlphanumMessage, 1>,
 		player_sender: Sender<PlayerMessage, 1>,
+		timer_sender: Sender<TimerMessage, 1>,
 	) -> Self {
 		Self {
 			alphanum_sender,
 			player_sender,
+			timer_sender,
 		}
 	}
 }
@@ -615,6 +659,35 @@ impl State for StateTimer {
 			.await;
 	}
 
+	async fn timer(&mut self, _event: TimerEvent) -> Option<StateTransition> {
+		None
+	}
+
+	async fn between_events(&mut self) -> ! {
+		loop {
+			let since = TIMERS
+				.lock()
+				.await
+				.first_timer()
+				.and_then(|t| time_since(t))
+				.unwrap_or(Duration::from_ticks(0));
+
+			let secs = since.as_secs();
+
+			let hours = secs > 60 * 60;
+			let timer = format_timer(since, hours).await;
+			self.alphanum_sender
+				.send(AlphanumMessage::Static(Calf::Owned(timer)))
+				.await;
+
+			if hours {
+				Timer::after(since.rem_min()).await
+			} else {
+				Timer::after(since.rem_sec()).await
+			}
+		}
+	}
+
 	async fn finish(&mut self) {
 		self.alphanum_sender
 			.send(AlphanumMessage::Blink(BlinkRate::Off))
@@ -623,15 +696,32 @@ impl State for StateTimer {
 		self.player_sender.send(PlayerMessage::Stop).await;
 	}
 
-	async fn timer(&mut self, _event: TimerEvent) -> Option<StateTransition> {
-		None
-	}
-
 	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
 		match event {
 			ButtonEvent::Press(function) => match function {
 				ButtonFunction::Select | ButtonFunction::Direction(_) => {
-					Some(StateTransition::Clock)
+					let lock = TIMERS.lock().await;
+
+					let transition = match lock.len() {
+						1 => Some(StateTransition::Clock),
+						_ => {
+							if let Some(t) = lock.first_timer().and_then(|t| lock.next_timer(t)) {
+								if t > Instant::now() {
+									Some(StateTransition::TimerRunning(t))
+								} else {
+									None
+								}
+							} else {
+								Some(StateTransition::Clock)
+							}
+						}
+					};
+
+					if let Some(t) = lock.first_timer() {
+						self.timer_sender.send(TimerMessage::Remove(t)).await;
+					}
+
+					transition
 				}
 			},
 			ButtonEvent::Release(_) => None,
@@ -680,7 +770,8 @@ impl State for StateTimerSet {
 						))
 						.await;
 
-					Some(StateTransition::TimerRunning)
+					// let event transition handle switching to timer
+					None
 				}
 				ButtonFunction::Direction(direction) => {
 					let minutes = *match direction {
@@ -712,7 +803,7 @@ impl StateSensors {
 	pub fn new(
 		alphanum_sender: Sender<AlphanumMessage, 1>,
 		sensor_sender: Sender<SensorMessage, 1>,
-	) -> Self{
+	) -> Self {
 		Self {
 			request_update: Instant::now(),
 			dht_last: None,
@@ -740,11 +831,13 @@ impl State for StateSensors {
 				write!(message, "{:>4}", reading.temperature).unwrap();
 			}
 
-			self.alphanum_sender.send(AlphanumMessage::Static(Calf::Owned(message))).await
+			self.alphanum_sender
+				.send(AlphanumMessage::Static(Calf::Owned(message)))
+				.await
 		}
 	}
 
-	async fn button(&mut self, event:ButtonEvent) -> Option<StateTransition> {
+	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
 		match event {
 			ButtonEvent::Press(ButtonFunction::Select) => Some(StateTransition::Clock),
 			_ => None,
@@ -757,5 +850,93 @@ impl State for StateSensors {
 		}
 
 		None
+	}
+}
+
+enum TimerMenuItem {
+	Delete,
+	Back,
+}
+
+pub struct StateTimerMenu {
+	timer_instant: Instant,
+	alphanum_sender: Sender<AlphanumMessage, 1>,
+	timer_sender: Sender<TimerMessage, 1>,
+	menu_selector: LinearSelector<'static, MenuItem<TimerMenuItem>>,
+}
+
+impl StateTimerMenu {
+	pub fn new(
+		timer_instant: Instant,
+		alphanum_sender: Sender<AlphanumMessage, 1>,
+		timer_sender: Sender<TimerMessage, 1>,
+	) -> Self {
+		const TIMER_MENU: &'static [MenuItem<TimerMenuItem>] = &[
+			MenuItem::leaf("Back", TimerMenuItem::Back),
+			MenuItem::leaf("Delete", TimerMenuItem::Delete),
+		];
+
+		Self {
+			timer_instant,
+			alphanum_sender,
+			timer_sender,
+			menu_selector: LinearSelector::new(TIMER_MENU),
+		}
+	}
+}
+
+impl State for StateTimerMenu {
+	async fn init(&mut self) {
+		self.alphanum_sender
+			.send(AlphanumMessage::Loop(self.menu_selector.curr().name))
+			.await
+	}
+
+	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
+		match event {
+			ButtonEvent::Press(function) => match function {
+				ButtonFunction::Select => match &self.menu_selector.curr().items {
+					MenuContents::Leaf(item) => match item {
+						TimerMenuItem::Back => {
+							Some(StateTransition::TimerRunning(self.timer_instant))
+						}
+						TimerMenuItem::Delete => {
+							self.timer_sender
+								.send(TimerMessage::Remove(self.timer_instant))
+								.await;
+
+							let lock = TIMERS.lock().await;
+
+							Some(match lock.prev_timer(self.timer_instant) {
+								Some(instant) => StateTransition::TimerRunning(instant),
+								None => StateTransition::Clock,
+							})
+						}
+					},
+					MenuContents::Menu(items) => {
+						self.menu_selector = LinearSelector::new(items);
+
+						self.alphanum_sender
+							.send(AlphanumMessage::Loop(self.menu_selector.curr().name))
+							.await;
+
+						None
+					}
+				},
+				ButtonFunction::Direction(dir) => {
+					let menu_item = match dir {
+						ButtonDirection::Prev => self.menu_selector.decr(),
+						ButtonDirection::Next => self.menu_selector.incr(),
+					};
+
+					self.alphanum_sender
+						.send(AlphanumMessage::Loop(menu_item.name))
+						.await;
+
+					None
+				}
+			},
+			ButtonEvent::Release(_) => None,
+		}
 	}
 }

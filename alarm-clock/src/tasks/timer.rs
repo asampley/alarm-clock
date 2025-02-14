@@ -2,50 +2,112 @@ use embassy_time::{Duration, Instant, Timer};
 
 use futures_lite::FutureExt;
 
+use heapless::Vec;
+
 use crate::message::{EventMessage, TimerEvent, TimerMessage};
-use crate::timer::{get_timer, set_timer};
 use crate::util::Either;
-use crate::{info, Receiver, Sender};
+use crate::{error, info, Mutex, Receiver, Sender};
+
+pub static TIMERS: Mutex<Timers<64>> = Mutex::new(Timers { timers: Vec::new() });
+
+pub struct Timers<const SIZE: usize> {
+	timers: Vec<Instant, SIZE>,
+}
+
+impl<const SIZE: usize> Timers<SIZE> {
+	fn insert_timer(&mut self, time: Instant) -> Result<usize, Instant> {
+		match self.timers.binary_search(&time) {
+			Ok(position) | Err(position) => self.timers.insert(position, time).map(|()| position),
+		}
+	}
+
+	pub fn first_timer(&self) -> Option<Instant> {
+		self.timers.first().copied()
+	}
+
+	pub fn last_timer(&self) -> Option<Instant> {
+		self.timers.last().copied()
+	}
+
+	fn remove_timer(&mut self, time: Instant) -> Option<Instant> {
+		match self.timers.binary_search(&time) {
+			Ok(position) => Some(self.timers.remove(position)),
+			Err(_) => None,
+		}
+	}
+
+	pub fn prev_timer(&self, from: Instant) -> Option<Instant> {
+		match self.timers.binary_search(&from) {
+			Ok(position) | Err(position) => self.timers.get(position.checked_sub(1)?).copied(),
+		}
+	}
+
+	pub fn next_timer(&self, from: Instant) -> Option<Instant> {
+		match self.timers.binary_search(&from) {
+			Ok(position) => self.timers.get(position + 1).copied(),
+			Err(position) => self.timers.get(position).copied(),
+		}
+	}
+
+	pub fn len(&self) -> usize {
+		self.timers.len()
+	}
+
+	pub fn as_slice(&self) -> &[Instant] {
+		&*self.timers
+	}
+}
 
 #[embassy_executor::task]
 pub async fn timer_task(
 	timer_receiver: Receiver<TimerMessage, 1>,
 	event_sender: Sender<EventMessage, 1>,
 ) {
+	let mut last_timer = Instant::from_ticks(0);
+
 	loop {
-		match get_timer() {
-			None => process_message(timer_receiver.receive().await),
-			Some(timer_time) => {
-				info!(
-					"Started timer for {} seconds",
-					(timer_time - Instant::now()).as_secs()
-				);
+		let next_timer = TIMERS.lock().await.next_timer(last_timer);
 
-				event_sender.send(TimerEvent::Start.into()).await;
+		match next_timer {
+			None => process_message(timer_receiver.receive().await, &event_sender).await,
+			Some(timer_time) => match timer_time.checked_duration_since(Instant::now()) {
+				None => process_message(timer_receiver.receive().await, &event_sender).await,
+				Some(_) => {
+					match async { Either::First(timer_receiver.receive().await) }
+						.or(async { Either::Second(Timer::at(timer_time).await) })
+						.await
+					{
+						Either::First(message) => process_message(message, &event_sender).await,
+						Either::Second(()) => {
+							info!("Timer done!");
 
-				match async { Either::First(timer_receiver.receive().await) }
-					.or(async { Either::Second(Timer::at(timer_time).await) })
-					.await
-				{
-					Either::First(message) => process_message(message),
-					Either::Second(()) => {
-						info!("Timer done!");
+							last_timer = timer_time;
 
-						set_timer(None);
-
-						event_sender.send(TimerEvent::End.into()).await;
+							event_sender.send(TimerEvent::End.into()).await;
+						}
 					}
 				}
-			}
+			},
 		}
 	}
 }
 
-fn process_message(message: TimerMessage) {
+async fn process_message(message: TimerMessage, event_sender: &Sender<EventMessage, 1>) {
 	match message {
 		TimerMessage::Seconds(seconds) => {
-			set_timer(Some(Instant::now() + Duration::from_secs(seconds)))
+			info!("Started timer for {} seconds", seconds);
+
+			let time = Instant::now() + Duration::from_secs(seconds);
+			match TIMERS.lock().await.insert_timer(time) {
+				Err(_) => error!("Maximum timers reached!"),
+				Ok(_) => {
+					event_sender.send(TimerEvent::Start(time).into()).await;
+				}
+			}
 		}
-		TimerMessage::Cancel => set_timer(None),
+		TimerMessage::Remove(index) => {
+			info!("Timer {} cancelled", index);
+			TIMERS.lock().await.remove_timer(index);
+		}
 	}
 }

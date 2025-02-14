@@ -30,7 +30,9 @@ use tweaks::Config;
 
 pub mod message;
 use message::TimerMessage;
-use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SongEvent, SynthMessage};
+use message::{
+	AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SongEvent, SynthMessage,
+};
 use message::{ButtonDirection, ButtonFunction};
 
 pub mod midi_dir;
@@ -44,8 +46,9 @@ use synth::Synth;
 
 pub mod states;
 use states::{
-	ConcreteState, State, StateAlarmSongSet, StateAlarmTimeSet, StateClock, StateClockSet,
-	StateModeSelect, StatePlay, StateSensors, StateTimerRunning, StateTransition,
+	ConcreteState, State, StateAlarm, StateAlarmSongSet, StateAlarmTimeSet, StateClock,
+	StateClockSet, StateMainMenu, StatePlay, StateSensors, StateTimer, StateTimerMenu,
+	StateTimerRunning, StateTimerSet, StateTransition,
 };
 
 pub mod tasks;
@@ -59,11 +62,7 @@ use tasks::timer::timer_task;
 pub mod time;
 use time::ClockTime;
 
-pub mod timer;
-
 pub mod util;
-
-use crate::states::{StateAlarm, StateTimer, StateTimerSet};
 
 type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CriticalSectionRawMutex, T, CAP>;
 type Sender<T, const CAP: usize> =
@@ -179,20 +178,27 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
 
 	// start sensors task
-	spawner.spawn(sensor_task(humid_temp, SENSOR_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
+	spawner.spawn(sensor_task(
+		humid_temp,
+		SENSOR_CHANNEL.receiver(),
+		EVENT_CHANNEL.sender(),
+	))?;
 
 	let mut state_transition = StateTransition::Clock;
 
 	let event_receiver = EVENT_CHANNEL.receiver();
 
 	loop {
-		info!("Entering state {:?}", state_transition);
+		info!(
+			"Entering state {:?}",
+			defmt::Debug2Format(&state_transition)
+		);
 
 		let state: ConcreteState = match state_transition {
 			StateTransition::Clock => {
 				StateClock::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateTransition::ModeSelect => StateModeSelect::new(ALPHANUM_CHANNEL.sender()).into(),
+			StateTransition::MainMenu => StateMainMenu::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::Alarm => {
 				StateAlarm::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
@@ -204,14 +210,20 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			StateTransition::Play => {
 				StatePlay::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
 			}
-			StateTransition::Timer => {
-				StateTimer::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
-			}
+			StateTransition::Timer => StateTimer::new(
+				ALPHANUM_CHANNEL.sender(),
+				PLAYER_CHANNEL.sender(),
+				TIMER_CHANNEL.sender(),
+			)
+			.into(),
 			StateTransition::TimerSet => {
 				StateTimerSet::new(ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
 			}
-			StateTransition::TimerRunning => {
-				StateTimerRunning::new(ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
+			StateTransition::TimerRunning(time) => {
+				StateTimerRunning::new(time, ALPHANUM_CHANNEL.sender()).into()
+			}
+			StateTransition::TimerMenu(x) => {
+				StateTimerMenu::new(x, ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
 			}
 			StateTransition::Sensors => {
 				StateSensors::new(ALPHANUM_CHANNEL.sender(), SENSOR_CHANNEL.sender()).into()
@@ -222,7 +234,10 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	}
 }
 
-async fn process_state(mut state: impl State, event_receiver: &Receiver<EventMessage, 1>) -> StateTransition {
+async fn process_state(
+	mut state: impl State,
+	event_receiver: &Receiver<EventMessage, 1>,
+) -> StateTransition {
 	state.init().await;
 
 	let state_transition = loop {

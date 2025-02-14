@@ -9,7 +9,8 @@ use crate::{debug, warn};
 const START_SIGNAL_DURATION: Duration = Duration::from_millis(20);
 const BIT_0_UP: Duration = Duration::from_micros(26);
 const BIT_1_UP: Duration = Duration::from_micros(70);
-const BIT_X_UP_MID: Duration = Duration::from_ticks((BIT_0_UP.as_ticks() + BIT_1_UP.as_ticks()) / 2);
+const BIT_X_UP_MID: Duration =
+	Duration::from_ticks((BIT_0_UP.as_ticks() + BIT_1_UP.as_ticks()) / 2);
 
 pub struct Dht<Pin: InputPin + OutputPin + Wait> {
 	pin: Pin,
@@ -36,7 +37,10 @@ impl<Pin: InputPin + OutputPin + Wait> Dht11<Pin> {
 			warn!("Checksum didn't match");
 		}
 
-		Ok(Dht11Reading { humidity, temperature })
+		Ok(Dht11Reading {
+			humidity,
+			temperature,
+		})
 	}
 
 	pub fn read_sync(&mut self) -> Result<Dht11Reading, Pin::Error> {
@@ -50,7 +54,10 @@ impl<Pin: InputPin + OutputPin + Wait> Dht11<Pin> {
 			warn!("Checksum didn't match");
 		}
 
-		Ok(Dht11Reading { humidity, temperature })
+		Ok(Dht11Reading {
+			humidity,
+			temperature,
+		})
 	}
 }
 

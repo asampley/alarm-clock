@@ -161,18 +161,17 @@ impl Selector<usize> for ExponentialSelector {
 			Self::Increasing { value } => {
 				*value >>= 1;
 
-				match value.checked_ilog2() {
-					Some(digit) => {
-						let digit = digit - 1;
+				if *value < 2 {
+					*self = Self::Single { value: *value }
+				} else {
+					let digit = value.ilog2() - 1;
 
-						*value |= 1 << digit;
+					*value |= 1 << digit;
 
-						*self = Self::Tuning {
-							value: *value,
-							digit: digit as u8,
-						};
-					}
-					None => *self = Self::Single { value: *value },
+					*self = Self::Tuning {
+						value: *value,
+						digit: digit as u8,
+					};
 				}
 			}
 			Self::Tuning { value, digit } => {

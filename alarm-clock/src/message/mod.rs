@@ -1,3 +1,4 @@
+use embassy_time::Instant;
 use heapless::String;
 use midly::num::u4;
 use midly::MidiMessage;
@@ -54,7 +55,7 @@ impl From<SongEvent> for EventMessage {
 
 #[derive(Debug)]
 pub enum TimerEvent {
-	Start,
+	Start(Instant),
 	End,
 }
 
@@ -85,7 +86,7 @@ pub enum PlayerMessage {
 #[derive(Debug)]
 pub enum TimerMessage {
 	Seconds(u64),
-	Cancel,
+	Remove(Instant),
 }
 
 #[derive(Debug)]
