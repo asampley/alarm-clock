@@ -26,12 +26,14 @@ pub fn dir_array(
 	}
 	.expect("Failed to read directory");
 
-	let files = dir
+	let mut files = dir
 		.into_iter()
 		.map(|f| f.unwrap())
 		.filter(|f| f.file_type().unwrap().is_file())
 		.map(|f| f.path())
 		.collect::<Vec<_>>();
+
+	files.sort();
 
 	let mut items_iter = TokenStream::from(items).into_iter();
 
