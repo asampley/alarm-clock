@@ -3,6 +3,7 @@ use embassy_time::{Duration, Instant, Timer};
 use embassy_sync::lazy_lock::LazyLock;
 
 use enum_dispatch::enum_dispatch;
+use futures_lite::FutureExt;
 use heapless::{String, Vec};
 
 use crate::circuit::alphanum::BlinkRate;
@@ -36,7 +37,7 @@ async fn send_time<const SIZE: usize>(
 		.await
 }
 
-async fn format_timer(duration: Duration, hours: bool) -> String<4> {
+fn format_timer(duration: Duration, hours: bool) -> String<4> {
 	use core::fmt::Write;
 
 	let mut string = String::new();
@@ -53,6 +54,26 @@ async fn format_timer(duration: Duration, hours: bool) -> String<4> {
 	} else {
 		write!(&mut string, "{:>4}", second).unwrap();
 	}
+
+	string
+}
+
+fn format_temperature(temperature: u8) -> String<4> {
+	use core::fmt::Write;
+
+	let mut string = String::new();
+
+	write!(string, "{:>3}C", temperature).unwrap();
+
+	string
+}
+
+fn format_humidity(humidity: u8) -> String<4> {
+	use core::fmt::Write;
+
+	let mut string = String::new();
+
+	write!(string, "{:>3}%", humidity).unwrap();
 
 	string
 }
@@ -326,19 +347,33 @@ impl State for StateClockSet {
 	}
 }
 
+enum AlarmDisplay {
+	Time,
+	Sensor(SensorDisplay),
+}
+
 pub struct StateAlarm {
 	alphanum_sender: Sender<AlphanumMessage, 1>,
 	player_sender: Sender<PlayerMessage, 1>,
+	sensor_sender: Sender<SensorMessage, 1>,
+	dht: Option<Dht11Reading>,
+	display: AlarmDisplay,
+	display_rotate: Instant,
 }
 
 impl StateAlarm {
 	pub fn new(
 		alphanum_sender: Sender<AlphanumMessage, 1>,
 		player_sender: Sender<PlayerMessage, 1>,
+		sensor_sender: Sender<SensorMessage, 1>,
 	) -> Self {
 		Self {
 			alphanum_sender,
 			player_sender,
+			sensor_sender,
+			dht: None,
+			display: AlarmDisplay::Time,
+			display_rotate: Instant::now() + Duration::from_secs(3),
 		}
 	}
 }
@@ -352,6 +387,8 @@ impl State for StateAlarm {
 		self.player_sender
 			.send(PlayerMessage::Loop(*ALARM_SONG.lock().await))
 			.await;
+
+		self.sensor_sender.send(SensorMessage::Update).await;
 	}
 
 	async fn finish(&mut self) {
@@ -364,9 +401,29 @@ impl State for StateAlarm {
 
 	async fn between_events(&mut self) -> ! {
 		loop {
-			send_time(self.alphanum_sender, ClockTime::now()).await;
+			if self.display_rotate < Instant::now() {
+				self.display = match self.display {
+					AlarmDisplay::Time => AlarmDisplay::Sensor(Default::default()),
+					AlarmDisplay::Sensor(s) => s.next().map_or(AlarmDisplay::Time, AlarmDisplay::Sensor),
+				};
+				self.display_rotate += Duration::from_secs(3);
+			}
 
-			Timer::after(ClockTime::duration_to_next_minute()).await;
+			match self.display {
+				AlarmDisplay::Time => send_time(self.alphanum_sender, ClockTime::now()).await,
+				AlarmDisplay::Sensor(s) => {
+					let message = match s {
+						SensorDisplay::Temperature => self.dht.map(|d| format_temperature(d.temperature)),
+						SensorDisplay::Humidity => self.dht.map(|d| format_humidity(d.humidity)),
+					};
+
+					self.alphanum_sender.send(AlphanumMessage::Static(Calf::Owned(message.unwrap_or(String::new())))).await;
+				},
+			}
+
+			Timer::at(self.display_rotate)
+				.or(Timer::after(ClockTime::duration_to_next_minute()))
+				.await
 		}
 	}
 
@@ -375,6 +432,15 @@ impl State for StateAlarm {
 			ButtonEvent::Press(_) => Some(StateTransition::Clock),
 			ButtonEvent::Release(_) => None,
 		}
+	}
+
+	async fn sensor(&mut self, event: SensorEvent) -> Option<StateTransition> {
+		match event {
+			SensorEvent::Dht(reading) => self.dht = Some(reading),
+			SensorEvent::DhtError => { self.sensor_sender.send(SensorMessage::Update).await; }
+		}
+
+		None
 	}
 }
 
@@ -583,7 +649,7 @@ impl State for StateTimerRunning {
 			let secs = remaining.as_secs();
 
 			let hours = secs > 60 * 60;
-			let timer = format_timer(remaining, hours).await;
+			let timer = format_timer(remaining, hours);
 			self.alphanum_sender
 				.send(AlphanumMessage::Static(Calf::Owned(timer)))
 				.await;
@@ -676,7 +742,7 @@ impl State for StateTimer {
 			let secs = since.as_secs();
 
 			let hours = secs > 60 * 60;
-			let timer = format_timer(since, hours).await;
+			let timer = format_timer(since, hours);
 			self.alphanum_sender
 				.send(AlphanumMessage::Static(Calf::Owned(timer)))
 				.await;
@@ -754,8 +820,7 @@ impl State for StateTimerSet {
 		let timer = format_timer(
 			Duration::from_secs(*self.exponential_selector.curr() as u64) * 60,
 			true,
-		)
-		.await;
+		);
 		self.alphanum_sender
 			.send(AlphanumMessage::Static(Calf::Owned(timer)))
 			.await;
@@ -780,7 +845,7 @@ impl State for StateTimerSet {
 						ButtonDirection::Next => self.exponential_selector.incr(),
 					};
 
-					let timer = format_timer(Duration::from_secs(minutes as u64) * 60, true).await;
+					let timer = format_timer(Duration::from_secs(minutes as u64) * 60, true);
 					self.alphanum_sender
 						.send(AlphanumMessage::Static(Calf::Owned(timer)))
 						.await;
@@ -793,9 +858,46 @@ impl State for StateTimerSet {
 	}
 }
 
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+#[repr(u8)]
+enum SensorDisplay {
+	Temperature = 0,
+	Humidity = 1,
+}
+
+impl Default for SensorDisplay {
+	fn default() -> Self {
+		Self::Temperature
+	}
+}
+
+impl SensorDisplay {
+	fn next(&self) -> Option<Self> {
+		match self {
+			Self::Temperature => Some(Self::Humidity),
+			Self::Humidity => None,
+		}
+	}
+
+	fn next_wrapping(&self) -> Self {
+		match self {
+			Self::Temperature => Self::Humidity,
+			Self::Humidity => Self::Temperature,
+		}
+	}
+
+	fn prev_wrapping(&self) -> Self {
+		match self {
+			Self::Temperature => Self::Humidity,
+			Self::Humidity => Self::Temperature,
+		}
+	}
+}
+
 pub struct StateSensors {
 	request_update: Instant,
 	dht_last: Option<Dht11Reading>,
+	display: SensorDisplay,
 	alphanum_sender: Sender<AlphanumMessage, 1>,
 	sensor_sender: Sender<SensorMessage, 1>,
 }
@@ -808,6 +910,7 @@ impl StateSensors {
 		Self {
 			request_update: Instant::now(),
 			dht_last: None,
+			display: SensorDisplay::Temperature,
 			alphanum_sender,
 			sensor_sender,
 		}
@@ -825,29 +928,44 @@ impl State for StateSensors {
 				self.request_update = now + Duration::from_secs(5);
 			}
 
-			let mut message = String::new();
-
-			if let Some(reading) = self.dht_last {
-				use core::fmt::Write;
-				write!(message, "{:>4}", reading.temperature).unwrap();
-			}
+			let message = if let Some(reading) = self.dht_last {
+				match self.display {
+					SensorDisplay::Temperature => format_temperature(reading.temperature),
+					SensorDisplay::Humidity => format_humidity(reading.humidity),
+				}
+			} else {
+				String::new()
+			};
 
 			self.alphanum_sender
 				.send(AlphanumMessage::Static(Calf::Owned(message)))
-				.await
+				.await;
+
+			Timer::at(self.request_update).await;
 		}
 	}
 
 	async fn button(&mut self, event: ButtonEvent) -> Option<StateTransition> {
 		match event {
-			ButtonEvent::Press(ButtonFunction::Select) => Some(StateTransition::Clock),
-			_ => None,
+			ButtonEvent::Press(function) => match function {
+				ButtonFunction::Select => Some(StateTransition::Clock),
+				ButtonFunction::Direction(direction) => {
+					self.display = match direction {
+						ButtonDirection::Prev => self.display.prev_wrapping(),
+						ButtonDirection::Next => self.display.next_wrapping(),
+					};
+
+					None
+				}
+			},
+			ButtonEvent::Release(_) => None,
 		}
 	}
 
 	async fn sensor(&mut self, event: SensorEvent) -> Option<StateTransition> {
 		match event {
 			SensorEvent::Dht(reading) => self.dht_last = Some(reading),
+			SensorEvent::DhtError => { self.sensor_sender.send(SensorMessage::Update).await; }
 		}
 
 		None

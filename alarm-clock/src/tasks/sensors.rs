@@ -13,7 +13,7 @@ pub async fn sensor_task(
 		match sensor_receiver.receive().await {
 			SensorMessage::Update => {
 				info!("Updating sensors");
-				match humid_temp.read().await {
+				match humid_temp.read_sync() {
 					Ok(reading) => {
 						event_sender
 							.send(EventMessage::Sensor(SensorEvent::Dht(reading)))

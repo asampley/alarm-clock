@@ -198,7 +198,11 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			StateTransition::MainMenu => StateMainMenu::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::Alarm => {
-				StateAlarm::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
+				StateAlarm::new(
+					ALPHANUM_CHANNEL.sender(),
+					PLAYER_CHANNEL.sender(),
+					SENSOR_CHANNEL.sender(),
+				).into()
 			}
 			StateTransition::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::AlarmSong => {

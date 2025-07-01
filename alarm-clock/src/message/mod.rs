@@ -69,6 +69,7 @@ impl From<TimerEvent> for EventMessage {
 #[derive(Debug, Format)]
 pub enum SensorEvent {
 	Dht(Dht11Reading),
+	DhtError,
 }
 
 #[derive(Debug)]
