@@ -21,6 +21,13 @@ impl<'a, T> LinearSelector<'a, T> {
 	}
 }
 
+impl<T> LinearSelector<'_, T> {
+	pub fn curr_index(&self) -> usize {
+		self.curr
+	}
+}
+
+
 impl<T> Selector<T> for LinearSelector<'_, T> {
 	fn incr(&mut self) -> &T {
 		self.curr = (self.curr + 1) % self.list.len();

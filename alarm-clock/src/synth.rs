@@ -11,7 +11,6 @@ use serde::Deserialize;
 /// Chosen because humans should be able to hear at most a 19kHz, or 1/52us
 ///
 /// Too small a delay reduces volume drastically
-const MAX_NOTE_HALF_DELAY_US: u64 = 30;
 const TICK_S: f64 = 1.0 / embassy_time::TICK_HZ as f64;
 
 fn frequency(key: u7) -> f64 {
@@ -23,6 +22,7 @@ fn frequency(key: u7) -> f64 {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct SynthConfig {
+	max_note_half_delay_us: u64,
 	pluck: InstrumentConfig,
 	hold: InstrumentConfig,
 }
@@ -102,7 +102,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 
 	fn add_note(&mut self, sound_key: SoundKey, vel: u7) -> Result<(), ()> {
 		let on_period_ticks =
-			MAX_NOTE_HALF_DELAY_US as f64 * vel.as_int() as f64 / u7::max_value().as_int() as f64;
+			self.config.max_note_half_delay_us as f64 * vel.as_int() as f64 / u7::max_value().as_int() as f64;
 
 		let instrument = self.instruments[usize::from(sound_key.channel.as_int())];
 
@@ -154,7 +154,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 				*since_play = t;
 
 				on_period = Some(min(
-					Duration::from_micros(MAX_NOTE_HALF_DELAY_US),
+					Duration::from_micros(self.config.max_note_half_delay_us),
 					on_period.unwrap_or(Duration::from_ticks(0)) + sound.amplitude.on_period(),
 				));
 			}
@@ -164,7 +164,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 
 		on_period.map(|on| Pulse {
 			on,
-			off: Duration::from_micros(MAX_NOTE_HALF_DELAY_US),
+			off: Duration::from_micros(self.config.max_note_half_delay_us),
 		})
 	}
 }

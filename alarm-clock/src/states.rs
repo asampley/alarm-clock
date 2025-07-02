@@ -1,3 +1,4 @@
+use defmt::Debug2Format;
 use embassy_time::{Duration, Instant, Timer};
 
 use embassy_sync::lazy_lock::LazyLock;
@@ -9,11 +10,13 @@ use heapless::{String, Vec};
 use crate::circuit::alphanum::BlinkRate;
 use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
+use crate::storage::{save_settings, SETTINGS};
 use crate::tasks::alarm::alarm_setter;
 use crate::tasks::timer::TIMERS;
 use crate::time::{set_time, time_since, time_until, TimeRem};
 use crate::util::Calf;
-use crate::{ClockTime, Sender, ALARM_SONG, MIDI_DIR};
+use crate::{ClockTime, Sender, MIDI_DIR};
+use crate::error;
 
 use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 
@@ -58,22 +61,28 @@ fn format_timer(duration: Duration, hours: bool) -> String<4> {
 	string
 }
 
-fn format_temperature(temperature: u8) -> String<4> {
+fn format_temperature(temperature: Option<u8>) -> String<4> {
 	use core::fmt::Write;
 
 	let mut string = String::new();
 
-	write!(string, "{:>3}C", temperature).unwrap();
+	match temperature {
+		Some(t) => write!(string, "{:>3}C", t),
+		None => write!(string, " --C"),
+	}.unwrap();
 
 	string
 }
 
-fn format_humidity(humidity: u8) -> String<4> {
+fn format_humidity(humidity: Option<u8>) -> String<4> {
 	use core::fmt::Write;
 
 	let mut string = String::new();
 
-	write!(string, "{:>3}%", humidity).unwrap();
+	match humidity {
+		Some(h) => write!(string, "{:>3}%", h),
+		None => write!(string, " --%"),
+	}.unwrap();
 
 	string
 }
@@ -385,7 +394,7 @@ impl State for StateAlarm {
 			.await;
 
 		self.player_sender
-			.send(PlayerMessage::Loop(*ALARM_SONG.lock().await))
+			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.lock().await.alarm_song_index]))
 			.await;
 
 		self.sensor_sender.send(SensorMessage::Update).await;
@@ -413,11 +422,11 @@ impl State for StateAlarm {
 				AlarmDisplay::Time => send_time(self.alphanum_sender, ClockTime::now()).await,
 				AlarmDisplay::Sensor(s) => {
 					let message = match s {
-						SensorDisplay::Temperature => self.dht.map(|d| format_temperature(d.temperature)),
-						SensorDisplay::Humidity => self.dht.map(|d| format_humidity(d.humidity)),
+						SensorDisplay::Temperature => format_temperature(self.dht.map(|d| d.temperature)),
+						SensorDisplay::Humidity => format_humidity(self.dht.map(|d| d.humidity)),
 					};
 
-					self.alphanum_sender.send(AlphanumMessage::Static(Calf::Owned(message.unwrap_or(String::new())))).await;
+					self.alphanum_sender.send(AlphanumMessage::Static(Calf::Owned(message))).await;
 				},
 			}
 
@@ -519,7 +528,12 @@ impl State for StateAlarmSongSet {
 		match event {
 			ButtonEvent::Press(function) => match function {
 				ButtonFunction::Select => {
-					*ALARM_SONG.lock().await = *self.midi_selector.curr();
+					SETTINGS.lock().await.alarm_song_index = self.midi_selector.curr_index();
+
+					match save_settings().await {
+						Ok(()) => (),
+						Err(e) => error!("failed to save settings: {:?}", Debug2Format(&e)),
+					}
 
 					self.player_sender.send(PlayerMessage::Stop).await;
 
@@ -722,7 +736,7 @@ impl State for StateTimer {
 			.await;
 
 		self.player_sender
-			.send(PlayerMessage::Loop(*ALARM_SONG.lock().await))
+			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.lock().await.alarm_song_index]))
 			.await;
 	}
 
@@ -928,13 +942,9 @@ impl State for StateSensors {
 				self.request_update = now + Duration::from_secs(5);
 			}
 
-			let message = if let Some(reading) = self.dht_last {
-				match self.display {
-					SensorDisplay::Temperature => format_temperature(reading.temperature),
-					SensorDisplay::Humidity => format_humidity(reading.humidity),
-				}
-			} else {
-				String::new()
+			let message = match self.display {
+				SensorDisplay::Temperature => format_temperature(self.dht_last.map(|d| d.temperature)),
+				SensorDisplay::Humidity => format_humidity(self.dht_last.map(|d| d.humidity)),
 			};
 
 			self.alphanum_sender

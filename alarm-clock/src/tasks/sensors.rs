@@ -19,7 +19,10 @@ pub async fn sensor_task(
 							.send(EventMessage::Sensor(SensorEvent::Dht(reading)))
 							.await
 					}
-					Err(e) => error!("Error reading from sensor: {:?}", e),
+					Err(e) => {
+						error!("Error reading from sensor: {:?}", e);
+						event_sender.send(EventMessage::Sensor(SensorEvent::DhtError)).await;
+					}
 				}
 			}
 		}

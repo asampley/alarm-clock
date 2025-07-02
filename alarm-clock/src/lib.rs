@@ -3,6 +3,7 @@
 #![feature(never_type)]
 #![feature(precise_capturing_in_traits)]
 
+use defmt::Debug2Format;
 use defmt_rtt as _;
 use esp_backtrace as _;
 
@@ -34,10 +35,11 @@ use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, Synth
 use message::{ButtonDirection, ButtonFunction};
 
 mod midi_dir;
-use midi_dir::Midi;
 use midi_dir::MIDI_DIR;
 
 mod selector;
+
+mod storage;
 
 mod synth;
 use synth::Synth;
@@ -60,6 +62,8 @@ use tasks::timer::timer_task;
 mod time;
 use time::ClockTime;
 
+use crate::storage::load_settings;
+
 mod util;
 
 type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CriticalSectionRawMutex, T, CAP>;
@@ -71,7 +75,6 @@ type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
 
 // an instant that marks midnight
-static ALARM_SONG: Mutex<Midi> = Mutex::new(MIDI_DIR[0]);
 static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 	serde_json_core::from_str(include_str!("../tweaks.json"))
 		.unwrap()
@@ -149,6 +152,12 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	let humid_temp = Dht11::from(p.GPIO13.degrade());
+
+	// load settings
+	match load_settings().await {
+		Ok(()) => (),
+		Err(e) => error!("Failed to load settings: {:?}", Debug2Format(&e)),
+	}
 
 	// start task to update buzzer
 	spawner.spawn(update_buzzer(MIDI_NOTE_CHANNEL.receiver(), buzzer, synth))?;
