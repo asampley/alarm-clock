@@ -36,7 +36,7 @@ impl State {
 pub async fn midi_player(
 	player_receiver: Receiver<PlayerMessage, 1>,
 	note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
-	event_sender: Sender<EventMessage, 1>,
+	event_sender: Sender<EventMessage, 16>,
 ) {
 	let mut state = State::Stopped;
 

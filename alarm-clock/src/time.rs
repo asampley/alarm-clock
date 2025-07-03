@@ -22,7 +22,7 @@ pub fn time_since(time: Instant) -> Option<Duration> {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ClockTime {
-	minutes: u16,
+	pub minutes: u16,
 }
 
 impl ClockTime {

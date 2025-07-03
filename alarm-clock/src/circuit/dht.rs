@@ -14,7 +14,7 @@ const BIT_1_UP: Duration = Duration::from_micros(70);
 const BIT_X_UP_MID: Duration =
 	Duration::from_ticks((BIT_0_UP.as_ticks() + BIT_1_UP.as_ticks()) / 2);
 const BIT_TIMEOUT: Duration = Duration::from_micros(1000);
-const ACKNOWLEDGE_TIMEOUT: Duration = Duration::from_millis(1000);
+const ACKNOWLEDGE_TIMEOUT: Duration = Duration::from_millis(10);
 
 #[derive(Error, Format)]
 pub enum SyncError<Pin: ErrorType> {
@@ -36,8 +36,8 @@ impl<Pin: InputPin + OutputPin> Dht11<Pin> {
 		Self(Dht { pin })
 	}
 
-	pub fn read_sync(&mut self) -> Result<Dht11Reading, SyncError<Pin>> {
-		Ok(self.0.read_bytes_sync().map(Self::parse)?)
+	pub async fn read(&mut self) -> Result<Dht11Reading, SyncError<Pin>> {
+		Ok(self.0.read_bytes().await.map(Self::parse)?)
 	}
 
 	fn parse(bytes: [u8; 5]) -> Dht11Reading {
@@ -64,17 +64,17 @@ pub struct Dht11Reading {
 }
 
 impl<Pin: InputPin + OutputPin> Dht<Pin> {
-	pub fn read_bytes_sync<const N: usize>(&mut self) -> Result<[u8; N], SyncError<Pin>> {
+	pub async fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], SyncError<Pin>> {
 		let mut output = [0; N];
 
-		self.start_signal_sync().map_err(SyncError::Pin)?;
+		self.start_signal().await.map_err(SyncError::Pin)?;
 
 		// wait for acknowledgement
 		self.wait_for_high(Instant::now() + ACKNOWLEDGE_TIMEOUT)?;
 		self.wait_for_low(Instant::now() + ACKNOWLEDGE_TIMEOUT)?;
 
 		for byte in &mut output {
-			*byte = self.read_byte_sync()?;
+			*byte = self.read_byte()?;
 		}
 
 		self.pin.set_high().map_err(SyncError::Pin)?;
@@ -82,7 +82,7 @@ impl<Pin: InputPin + OutputPin> Dht<Pin> {
 		Ok(output)
 	}
 
-	fn start_signal_sync(&mut self) -> Result<(), Pin::Error> {
+	async fn start_signal(&mut self) -> Result<(), Pin::Error> {
 		self.pin.set_low()?;
 		embassy_time::block_for(START_SIGNAL_DURATION);
 		self.pin.set_high()?;
@@ -92,18 +92,18 @@ impl<Pin: InputPin + OutputPin> Dht<Pin> {
 		Ok(())
 	}
 
-	fn read_byte_sync(&mut self) -> Result<u8, SyncError<Pin>> {
+	fn read_byte(&mut self) -> Result<u8, SyncError<Pin>> {
 		let mut output = 0;
 
 		for bit in (0..8).rev() {
-			output |= (self.read_bit_sync()? as u8) << bit;
+			output |= (self.read_bit()? as u8) << bit;
 		}
 
 		Ok(output)
 	}
 
 	// Assumes the pin is already low.
-	fn read_bit_sync(&mut self) -> Result<bool, SyncError<Pin>> {
+	fn read_bit(&mut self) -> Result<bool, SyncError<Pin>> {
 		let timeout = Instant::now() + BIT_TIMEOUT;
 
 		self.wait_for_high(timeout)?;
@@ -115,7 +115,7 @@ impl<Pin: InputPin + OutputPin> Dht<Pin> {
 		Ok(Instant::now() - start > BIT_X_UP_MID)
 	}
 
-	fn timeout_sync(timeout: Instant) -> Result<(), SyncError<Pin>> {
+	fn timeout(timeout: Instant) -> Result<(), SyncError<Pin>> {
 		if Instant::now() > timeout {
 			Err(SyncError::Timeout)
 		} else {
@@ -125,7 +125,7 @@ impl<Pin: InputPin + OutputPin> Dht<Pin> {
 
 	fn wait_for_high(&mut self, timeout: Instant) -> Result<(), SyncError<Pin>> {
 		while self.pin.is_low().map_err(SyncError::Pin)? {
-			Self::timeout_sync(timeout)?
+			Self::timeout(timeout)?
 		}
 
 		Ok(())
@@ -133,7 +133,7 @@ impl<Pin: InputPin + OutputPin> Dht<Pin> {
 
 	fn wait_for_low(&mut self, timeout: Instant) -> Result<(), SyncError<Pin>> {
 		while self.pin.is_high().map_err(SyncError::Pin)? {
-			Self::timeout_sync(timeout)?
+			Self::timeout(timeout)?
 		}
 
 		Ok(())

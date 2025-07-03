@@ -3,9 +3,8 @@ use futures_lite::FutureExt;
 
 use embassy_sync::watch;
 
-use crate::message::EventMessage;
+use crate::message::{EventMessage, SensorMessage};
 use crate::time::ClockTime;
-use crate::util::Either;
 use crate::{info, Sender, Watch};
 
 static ALARM_TIME: Watch<ClockTime, 1> = Watch::new();
@@ -14,8 +13,14 @@ pub fn alarm_setter() -> watch::Sender<'static, CriticalSectionRawMutex, ClockTi
 	ALARM_TIME.sender()
 }
 
+enum Action {
+	Alarm,
+	Sensor,
+	Change,
+}
+
 #[embassy_executor::task]
-pub async fn alarm_task(event_channel: Sender<EventMessage, 1>) {
+pub async fn alarm_task(event_channel: Sender<EventMessage, 16>, sensor_channel: Sender<SensorMessage, 1>) {
 	let mut alarm_time = ALARM_TIME.receiver().unwrap();
 
 	loop {
@@ -25,15 +30,22 @@ pub async fn alarm_task(event_channel: Sender<EventMessage, 1>) {
 			}
 			Some(time) => {
 				info!("Next alarm at {}", time.as_chars());
-				match async { Either::First(time.wait_until().await) }
-					.or(async { Either::Second(alarm_time.changed().await) })
+
+				// Warm up sensor for actual alarm (this one in case we miss the window of 1 minute before
+				sensor_channel.send(SensorMessage::Update).await;
+
+				match async { time.wait_until().await; Action::Alarm }
+					.or(async { (ClockTime::new(time.minutes - 1)).wait_until().await; Action::Sensor })
+					.or(async { alarm_time.changed().await; Action::Change })
 					.await
 				{
-					Either::First(()) => {
+					Action::Alarm => {
 						info!("Alarm time!");
 						event_channel.send(EventMessage::Alarm).await;
 					}
-					Either::Second(_) => (),
+					// Warm up sensor for actual alarm
+					Action::Sensor => sensor_channel.send(SensorMessage::Update).await,
+					Action::Change => (),
 				}
 			}
 		}

@@ -6,7 +6,7 @@ use crate::message::{ButtonEvent, EventMessage};
 
 #[embassy_executor::task(pool_size = 3)]
 pub async fn poll_input(
-	event_sender: Sender<EventMessage, 1>,
+	event_sender: Sender<EventMessage, 16>,
 	mut button: Button,
 	function: ButtonFunction,
 ) -> ! {

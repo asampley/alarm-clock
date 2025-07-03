@@ -394,7 +394,7 @@ impl State for StateAlarm {
 			.await;
 
 		self.player_sender
-			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.lock().await.alarm_song_index]))
+			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.read().await.alarm_song_index]))
 			.await;
 
 		self.sensor_sender.send(SensorMessage::Update).await;
@@ -528,7 +528,7 @@ impl State for StateAlarmSongSet {
 		match event {
 			ButtonEvent::Press(function) => match function {
 				ButtonFunction::Select => {
-					SETTINGS.lock().await.alarm_song_index = self.midi_selector.curr_index();
+					SETTINGS.write().await.alarm_song_index = self.midi_selector.curr_index();
 
 					match save_settings().await {
 						Ok(()) => (),
@@ -736,7 +736,7 @@ impl State for StateTimer {
 			.await;
 
 		self.player_sender
-			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.lock().await.alarm_song_index]))
+			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.read().await.alarm_song_index]))
 			.await;
 	}
 

@@ -57,7 +57,7 @@ impl<const SIZE: usize> Timers<SIZE> {
 #[embassy_executor::task]
 pub async fn timer_task(
 	timer_receiver: Receiver<TimerMessage, 1>,
-	event_sender: Sender<EventMessage, 1>,
+	event_sender: Sender<EventMessage, 16>,
 ) {
 	let mut last_timer = Instant::from_ticks(0);
 
@@ -88,7 +88,7 @@ pub async fn timer_task(
 	}
 }
 
-async fn process_message(message: TimerMessage, event_sender: &Sender<EventMessage, 1>) {
+async fn process_message(message: TimerMessage, event_sender: &Sender<EventMessage, 16>) {
 	match message {
 		TimerMessage::Seconds(seconds) => {
 			info!("Started timer for {} seconds", seconds);

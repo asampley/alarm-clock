@@ -6,7 +6,7 @@
 	"ascii_uppercase": true,
 
 	"synth_config": {
-		"max_note_half_delay_us": 60,
+		"max_note_half_delay_us": 30,
 		"pluck": {
 			"sustain_ratio": 0.1,
 			"decay_constant": 4.0,

@@ -1,7 +1,6 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
 #![feature(never_type)]
-#![feature(precise_capturing_in_traits)]
 
 use defmt::Debug2Format;
 use defmt_rtt as _;
@@ -73,6 +72,7 @@ type Receiver<T, const CAP: usize> =
 	embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, T, CAP>;
 type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
+type RwLock<T> = embassy_sync::rwlock::RwLock<CriticalSectionRawMutex, T>;
 
 // an instant that marks midnight
 static CONFIG: LazyLock<Config> = LazyLock::new(|| {
@@ -85,7 +85,7 @@ const MIDI_NOTE_CAPACITY: usize = 64;
 const SYNTH_NOTES: usize = 32;
 
 static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
-static EVENT_CHANNEL: Channel<EventMessage, 1> = Channel::new();
+static EVENT_CHANNEL: Channel<EventMessage, 16> = Channel::new();
 static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
 static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
 static SENSOR_CHANNEL: Channel<SensorMessage, 1> = Channel::new();
@@ -178,7 +178,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	spawner.spawn(alphanum_task(alphanum, ALPHANUM_CHANNEL.receiver()))?;
 
 	// start alarm task
-	spawner.spawn(alarm_task(EVENT_CHANNEL.sender()))?;
+	spawner.spawn(alarm_task(EVENT_CHANNEL.sender(), SENSOR_CHANNEL.sender()))?;
 
 	// start timer task
 	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
@@ -246,7 +246,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 
 async fn process_state(
 	mut state: impl State,
-	event_receiver: &Receiver<EventMessage, 1>,
+	event_receiver: &Receiver<EventMessage, 16>,
 ) -> StateTransition {
 	state.init().await;
 

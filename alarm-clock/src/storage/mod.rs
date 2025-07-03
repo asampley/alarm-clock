@@ -6,10 +6,8 @@ use hal::STORAGE;
 use embedded_storage::{ReadStorage, Storage};
 use thiserror::Error;
 
-use crate::{info, Mutex};
+use crate::{info, RwLock};
 
-// 256 KiB, if the binary gets bigger than that, panic.
-const SETTINGS_ADDRESS: u32 = 0x40_000;
 const SETTINGS_MAX_SIZE: usize = 1024;
 
 type BincodeConfig = Configuration<LittleEndian, Fixint, Limit<SETTINGS_MAX_SIZE>>;
@@ -27,7 +25,7 @@ impl Settings {
 	}
 }
 
-pub static SETTINGS: Mutex<Settings> = Mutex::new(Settings::new());
+pub static SETTINGS: RwLock<Settings> = RwLock::new(Settings::new());
 
 #[derive(Debug, Error)]
 pub enum SaveError {
@@ -45,13 +43,22 @@ pub enum LoadError {
 	Decode(bincode::error::DecodeError),
 }
 
+// position settings at the end of the storage space
+fn settings_address(storage: &impl Storage) -> u32 {
+	if core::mem::size_of::<u32>() >= core::mem::size_of::<usize>() {
+		(storage.capacity() - SETTINGS_MAX_SIZE) as u32
+	} else {
+		core::cmp::min(u32::MAX as usize - SETTINGS_MAX_SIZE, storage.capacity() - SETTINGS_MAX_SIZE) as u32
+	}
+}
+
 pub async fn save_settings() -> Result<(), SaveError> {
 	let mut buffer = [0; SETTINGS_MAX_SIZE];
 
 	let written = {
-		let set = SETTINGS.lock().await;
+		let set = SETTINGS.read().await;
 
-		info!("Writing settings {:?}", *set);
+		info!("Saving settings {:?}", *set);
 
 		bincode::encode_into_slice(
 			&*set,
@@ -60,14 +67,15 @@ pub async fn save_settings() -> Result<(), SaveError> {
 		).map_err(SaveError::Encode)
 	}?;
 
-	STORAGE
-		.get()
-		.lock()
-		.await
-		.write(SETTINGS_ADDRESS, &buffer[..written])
-		.map_err(SaveError::Storage)?;
+	{
+		let mut storage = STORAGE.get().lock().await;
 
-	info!("Wrote settings");
+		let address = settings_address(&*storage);
+
+		storage.write(address, &buffer[..written]).map_err(SaveError::Storage)?;
+
+		info!("Saved settings to 0x{:x}", address);
+	}
 
 	Ok(())
 }
@@ -75,12 +83,15 @@ pub async fn save_settings() -> Result<(), SaveError> {
 pub async fn load_settings() -> Result<(), LoadError> {
 	let mut buffer = [0; SETTINGS_MAX_SIZE];
 
-	STORAGE
-		.get()
-		.lock()
-		.await
-		.read(SETTINGS_ADDRESS, &mut buffer)
-		.map_err(LoadError::Storage)?;
+	{
+		let mut storage = STORAGE.get().lock().await;
+
+		let address = settings_address(&*storage);
+
+		storage.read(address, &mut buffer).map_err(LoadError::Storage)?;
+
+		info!("Loading settings from 0x{:x}", address);
+	}
 
 	let settings = bincode::decode_from_slice(&buffer, BincodeConfig::default())
 		.map_err(LoadError::Decode)?
@@ -88,7 +99,7 @@ pub async fn load_settings() -> Result<(), LoadError> {
 
 	info!("Loading settings: {:?}", settings);
 
-	*SETTINGS.lock().await = settings;
+	*SETTINGS.write().await = settings;
 
 	info!("Loaded settings");
 

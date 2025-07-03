@@ -14,7 +14,7 @@ pre-table = { path = "../pre-table" }
 bincode = { version = "2.0.1", default-features = false, features = ["derive"] }
 
 embassy-executor = { version = "0.7.0", features = ["defmt", "nightly"] }
-embassy-sync = { version = "0.6.1", features = ["defmt"] }
+embassy-sync = { version = "0.7.0", features = ["defmt"] }
 embassy-time = { version = "0.4.0", features = ["defmt", "generic-queue-8"] }
 
 embedded-hal = { version = "1.0.0", features = ["defmt-03"] }

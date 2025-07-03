@@ -7,13 +7,13 @@ use crate::{error, info, Sender};
 pub async fn sensor_task(
 	mut humid_temp: Dht11,
 	sensor_receiver: Receiver<SensorMessage, 1>,
-	event_sender: Sender<EventMessage, 1>,
+	event_sender: Sender<EventMessage, 16>,
 ) {
 	loop {
 		match sensor_receiver.receive().await {
 			SensorMessage::Update => {
 				info!("Updating sensors");
-				match humid_temp.read_sync() {
+				match humid_temp.read().await {
 					Ok(reading) => {
 						event_sender
 							.send(EventMessage::Sensor(SensorEvent::Dht(reading)))
