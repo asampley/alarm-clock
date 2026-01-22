@@ -119,8 +119,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 		.with_cpu_clock(esp_hal::clock::CpuClock::max())
 	);
 
-	let timer0 = esp_hal::timer::systimer::SystemTimer::new(p.SYSTIMER);
-	esp_rtos::start(timer0.alarm0);
+	esp_rtos::start(esp_hal::timer::timg::TimerGroup::new(p.TIMG0).timer0);
 
 	// create buzzer controller
 	let buzzer = Buzzer::from(p.GPIO14.degrade());

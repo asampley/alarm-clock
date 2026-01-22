@@ -18,14 +18,13 @@ mod xtensa {
 
 	impl From<AnyPin<'static>> for Dht11 {
 		fn from(pin: AnyPin<'static>) -> Self {
-			let mut flex = Flex::new(pin);
-			flex.apply_output_config(
-				&OutputConfig::default()
+			Self::new(Output::new(
+				pin,
+				Level::High,
+				OutputConfig::default()
 					.with_drive_mode(DriveMode::OpenDrain)
 					.with_pull(Pull::Up)
-			);
-
-			Self::new(flex)
+			).into_flex())
 		}
 	}
 

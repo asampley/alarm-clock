@@ -5,7 +5,7 @@ use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
 
 use thiserror::Error;
 
-use crate::warn;
+use crate::{debug, warn};
 
 const START_SIGNAL_DURATION: Duration = Duration::from_millis(20);
 const START_SIGNAL_FINISH_WAIT: Duration = Duration::from_micros(40);
@@ -36,8 +36,8 @@ impl<Pin: InputPin + OutputPin> Dht11<Pin> {
 		Self(Dht { pin })
 	}
 
-	pub async fn read(&mut self) -> Result<Dht11Reading, SyncError<Pin>> {
-		self.0.read_bytes().await.map(Self::parse)
+	pub fn read(&mut self) -> Result<Dht11Reading, SyncError<Pin>> {
+		Ok(self.0.read_bytes().map(Self::parse)?)
 	}
 
 	fn parse(bytes: [u8; 5]) -> Dht11Reading {
@@ -64,14 +64,18 @@ pub struct Dht11Reading {
 }
 
 impl<Pin: InputPin + OutputPin> Dht<Pin> {
-	pub async fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], SyncError<Pin>> {
+	pub fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], SyncError<Pin>> {
 		let mut output = [0; N];
 
-		self.start_signal().await.map_err(SyncError::Pin)?;
+		debug!("start signal");
+		self.start_signal().map_err(SyncError::Pin)?;
 
 		// wait for acknowledgement
-		self.wait_for_high(Instant::now() + ACKNOWLEDGE_TIMEOUT)?;
-		self.wait_for_low(Instant::now() + ACKNOWLEDGE_TIMEOUT)?;
+		let timeout = Instant::now() + ACKNOWLEDGE_TIMEOUT;
+		self.wait_for_high(timeout)?;
+		self.wait_for_low(timeout)?;
+
+		debug!("start acknowledged");
 
 		for byte in &mut output {
 			*byte = self.read_byte()?;
@@ -82,7 +86,8 @@ impl<Pin: InputPin + OutputPin> Dht<Pin> {
 		Ok(output)
 	}
 
-	async fn start_signal(&mut self) -> Result<(), Pin::Error> {
+	fn start_signal(&mut self) -> Result<(), Pin::Error> {
+
 		self.pin.set_low()?;
 		embassy_time::block_for(START_SIGNAL_DURATION);
 		self.pin.set_high()?;

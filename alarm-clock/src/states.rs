@@ -410,14 +410,24 @@ impl State for StateAlarm {
 		loop {
 			if self.display_rotate < Instant::now() {
 				self.display = match self.display {
-					AlarmDisplay::Time => AlarmDisplay::Sensor(Default::default()),
+					AlarmDisplay::Time => {
+						if self.dht.is_none() {
+							// try another sensor reading here in case the last failed
+							self.sensor_sender.send(SensorMessage::Update).await;
+							AlarmDisplay::Time
+						} else {
+							AlarmDisplay::Sensor(Default::default())
+						}
+					}
 					AlarmDisplay::Sensor(s) => s.next().map_or(AlarmDisplay::Time, AlarmDisplay::Sensor),
 				};
 				self.display_rotate += Duration::from_secs(3);
 			}
 
 			match self.display {
-				AlarmDisplay::Time => send_time(self.alphanum_sender, ClockTime::now()).await,
+				AlarmDisplay::Time => {
+					send_time(self.alphanum_sender, ClockTime::now()).await
+				}
 				AlarmDisplay::Sensor(s) => {
 					let message = match s {
 						SensorDisplay::Temperature => format_temperature(self.dht.map(|d| d.temperature)),
@@ -444,7 +454,7 @@ impl State for StateAlarm {
 	async fn sensor(&mut self, event: SensorEvent) -> Option<StateTransition> {
 		match event {
 			SensorEvent::Dht(reading) => self.dht = Some(reading),
-			SensorEvent::DhtError => { self.sensor_sender.send(SensorMessage::Update).await; }
+			SensorEvent::DhtError => (),
 		}
 
 		None
@@ -968,7 +978,7 @@ impl State for StateSensors {
 	async fn sensor(&mut self, event: SensorEvent) -> Option<StateTransition> {
 		match event {
 			SensorEvent::Dht(reading) => self.dht_last = Some(reading),
-			SensorEvent::DhtError => { self.sensor_sender.send(SensorMessage::Update).await; }
+			SensorEvent::DhtError => (),
 		}
 
 		None

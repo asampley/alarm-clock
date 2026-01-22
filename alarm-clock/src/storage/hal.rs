@@ -11,6 +11,6 @@ mod xtensa {
 	pub type Storage = esp_storage::FlashStorage<'static>;
 
 	pub static STORAGE: LazyLock<Mutex<Storage>> = LazyLock::new(||
-		Mutex::new(Storage::new(unsafe { FLASH::steal() }))
+		Mutex::new(Storage::new(unsafe { FLASH::steal() }).multicore_auto_park())
 	);
 }
