@@ -1,12 +1,13 @@
 mod hal;
+
 use bincode::{config::{Configuration, Fixint, Limit, LittleEndian}, Decode, Encode};
-use defmt::Format;
+use defmt::{Debug2Format, Format};
 use hal::STORAGE;
 
 use embedded_storage::{ReadStorage, Storage};
 use thiserror::Error;
 
-use crate::{info, RwLock};
+use crate::{error, info, RwLock, RwLockReadGuard};
 
 const SETTINGS_MAX_SIZE: usize = 1024;
 
@@ -25,7 +26,20 @@ impl Settings {
 	}
 }
 
-pub static SETTINGS: RwLock<Settings> = RwLock::new(Settings::new());
+static SETTINGS: RwLock<Settings> = RwLock::new(Settings::new());
+
+pub async fn settings() -> RwLockReadGuard<'static, Settings> {
+	SETTINGS.read().await
+}
+
+pub async fn modify_settings(f: impl FnOnce(&mut Settings)) {
+	f(&mut *SETTINGS.write().await);
+
+	match save_settings().await {
+		Ok(()) => (),
+		Err(e) => error!("failed to save settings: {:?}", Debug2Format(&e)),
+	};
+}
 
 #[derive(Debug, Error)]
 pub enum SaveError {

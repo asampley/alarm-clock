@@ -73,6 +73,7 @@ type Receiver<T, const CAP: usize> =
 type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
 type RwLock<T> = embassy_sync::rwlock::RwLock<CriticalSectionRawMutex, T>;
+type RwLockReadGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, CriticalSectionRawMutex, T>;
 
 // an instant that marks midnight
 static CONFIG: LazyLock<Config> = LazyLock::new(|| {
@@ -114,16 +115,12 @@ impl From<esp_hal::i2c::master::Error> for Error {
 pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	let config = CONFIG.get();
 
-	let p = esp_hal::init({
-		let mut config = esp_hal::Config::default();
-
-		config.cpu_clock = esp_hal::clock::CpuClock::max();
-
-		config
-	});
+	let p = esp_hal::init(esp_hal::Config::default()
+		.with_cpu_clock(esp_hal::clock::CpuClock::max())
+	);
 
 	let timer0 = esp_hal::timer::systimer::SystemTimer::new(p.SYSTIMER);
-	esp_hal_embassy::init(timer0.alarm0);
+	esp_rtos::start(timer0.alarm0);
 
 	// create buzzer controller
 	let buzzer = Buzzer::from(p.GPIO14.degrade());

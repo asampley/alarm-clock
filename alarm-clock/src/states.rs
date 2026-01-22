@@ -1,4 +1,3 @@
-use defmt::Debug2Format;
 use embassy_time::{Duration, Instant, Timer};
 
 use embassy_sync::lazy_lock::LazyLock;
@@ -10,13 +9,12 @@ use heapless::{String, Vec};
 use crate::circuit::alphanum::BlinkRate;
 use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
-use crate::storage::{save_settings, SETTINGS};
+use crate::storage::{modify_settings, settings};
 use crate::tasks::alarm::alarm_setter;
 use crate::tasks::timer::TIMERS;
 use crate::time::{set_time, time_since, time_until, TimeRem};
 use crate::util::Calf;
 use crate::{ClockTime, Sender, MIDI_DIR};
-use crate::error;
 
 use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 
@@ -394,7 +392,7 @@ impl State for StateAlarm {
 			.await;
 
 		self.player_sender
-			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.read().await.alarm_song_index]))
+			.send(PlayerMessage::Loop(MIDI_DIR[settings().await.alarm_song_index]))
 			.await;
 
 		self.sensor_sender.send(SensorMessage::Update).await;
@@ -528,12 +526,7 @@ impl State for StateAlarmSongSet {
 		match event {
 			ButtonEvent::Press(function) => match function {
 				ButtonFunction::Select => {
-					SETTINGS.write().await.alarm_song_index = self.midi_selector.curr_index();
-
-					match save_settings().await {
-						Ok(()) => (),
-						Err(e) => error!("failed to save settings: {:?}", Debug2Format(&e)),
-					}
+					modify_settings(|settings| settings.alarm_song_index = self.midi_selector.curr_index()).await;
 
 					self.player_sender.send(PlayerMessage::Stop).await;
 
@@ -736,7 +729,7 @@ impl State for StateTimer {
 			.await;
 
 		self.player_sender
-			.send(PlayerMessage::Loop(MIDI_DIR[SETTINGS.read().await.alarm_song_index]))
+			.send(PlayerMessage::Loop(MIDI_DIR[settings().await.alarm_song_index]))
 			.await;
 	}
 

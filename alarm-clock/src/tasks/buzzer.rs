@@ -32,12 +32,11 @@ async fn drive_buzzer<P: OutputPin, const N: usize>(
 	synth: &mut Synth<N>,
 	buzzer: &mut buzzer::Buzzer<P>,
 ) -> Result<(), P::Error> {
-	if let Some(pulse) = synth.update() {
-		buzzer.set_high()?;
-		embassy_time::block_for(pulse.on);
-		buzzer.set_low()?;
-		Timer::after(pulse.off).await;
-	}
+	let pulse = synth.update();
+	buzzer.set_high()?;
+	embassy_time::block_for(pulse.on);
+	buzzer.set_low()?;
+	Timer::after(pulse.off).await;
 
 	Ok(())
 }

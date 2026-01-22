@@ -1,7 +1,8 @@
-use core::cmp::min;
+use core::cmp::{max, min};
 
+use defmt::Format;
 use embassy_time::{Duration, Instant};
-use heapless::FnvIndexMap;
+use heapless::index_map::FnvIndexMap;
 use midly::{
 	num::{u4, u7},
 	MidiMessage,
@@ -20,14 +21,14 @@ fn frequency(key: u7) -> f64 {
 	F[usize::from(key.as_int())]
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize, Format)]
 pub struct SynthConfig {
 	max_note_half_delay_us: u64,
 	pluck: InstrumentConfig,
 	hold: InstrumentConfig,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize, Format)]
 pub struct InstrumentConfig {
 	sustain_ratio: f64,
 	decay_constant: f64,
@@ -111,8 +112,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 			period: Duration::from_micros((1_000_000.0 / frequency(sound_key.key)) as u64),
 			amplitude: Amplitude::Decay {
 				on_period_ticks,
-				sustain_transition: on_period_ticks
-					* self.config.instrument_config(instrument).sustain_ratio,
+				sustain_transition: on_period_ticks * self.config.instrument_config(instrument).sustain_ratio,
 			},
 		};
 
@@ -134,10 +134,12 @@ impl<const NOTES: usize> Synth<NOTES> {
 	}
 
 	/// Returns how wide the wave form should be which is approximately amplitude
-	pub fn update(&mut self) -> Option<Pulse> {
+	///
+	/// Even if empty, this will return an off pulse.
+	pub fn update(&mut self) -> Pulse {
 		let now = Instant::now();
 
-		let mut on_period = None;
+		let mut on_period = 0.0;
 
 		for (_, (ref mut sound, since_play)) in &mut self.notes {
 			let instrument_config = self.config.instrument_config(sound.instrument);
@@ -153,21 +155,25 @@ impl<const NOTES: usize> Synth<NOTES> {
 
 				*since_play = t;
 
-				on_period = Some(min(
-					Duration::from_micros(self.config.max_note_half_delay_us),
-					on_period.unwrap_or(Duration::from_ticks(0)) + sound.amplitude.on_period(),
-				));
+				on_period += sound.amplitude.on_period_ticks();
 			}
 		}
 
+		let on_period = min(
+			Duration::from_micros(self.config.max_note_half_delay_us),
+			Duration::from_ticks(max(0, on_period as u64))
+		);
+
 		self.notes.retain(|_, (sound, _)| !sound.amplitude.done());
 
-		on_period.map(|on| Pulse {
-			on,
+		Pulse {
+			on: on_period,
 			off: Duration::from_micros(self.config.max_note_half_delay_us),
-		})
+		}
 	}
 }
+
+
 
 #[derive(Copy, Clone, Eq, Hash, PartialEq)]
 struct SoundKey {
@@ -175,27 +181,28 @@ struct SoundKey {
 	key: u7,
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub struct Pulse {
 	pub on: Duration,
 	pub off: Duration,
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 struct Sound {
+	#[defmt(Debug2Format)]
 	instrument: u7,
 	period: Duration,
 	amplitude: Amplitude,
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 enum Amplitude {
 	Decay {
 		on_period_ticks: f64,
 		sustain_transition: f64,
 	},
 	Sustain {
-		on_period: Duration,
+		on_period_ticks: f64,
 	},
 	Release {
 		on_period_ticks: f64,
@@ -203,13 +210,11 @@ enum Amplitude {
 }
 
 impl Amplitude {
-	const fn on_period(&self) -> Duration {
+	const fn on_period_ticks(&self) -> f64 {
 		match self {
-			Self::Decay {
-				on_period_ticks, ..
-			} => Duration::from_ticks(*on_period_ticks as u64),
-			Self::Sustain { on_period } => *on_period,
-			Self::Release { on_period_ticks } => Duration::from_ticks(*on_period_ticks as u64),
+			Self::Decay { on_period_ticks, .. } => *on_period_ticks,
+			Self::Sustain { on_period_ticks } => *on_period_ticks,
+			Self::Release { on_period_ticks } => *on_period_ticks,
 		}
 	}
 
@@ -222,21 +227,17 @@ impl Amplitude {
 					on_period_ticks: *on_period_ticks,
 				}
 			}
-			Self::Sustain { on_period } => {
+			Self::Sustain { on_period_ticks } => {
 				*self = Self::Release {
-					on_period_ticks: on_period.as_ticks() as f64,
+					on_period_ticks: *on_period_ticks,
 				}
 			}
 			Self::Release { .. } => (),
 		};
 	}
 
-	fn done(&self) -> bool {
-		if let Self::Release { on_period_ticks } = self {
-			*on_period_ticks <= 0.0
-		} else {
-			false
-		}
+	const fn done(&self) -> bool {
+		self.on_period_ticks() <= 0.0
 	}
 
 	fn evolve(&mut self, decay_constant: f64, release_decay_constant: f64, elapsed: Duration) {
@@ -249,7 +250,7 @@ impl Amplitude {
 
 				if on_period_ticks < sustain_transition {
 					*self = Amplitude::Sustain {
-						on_period: Duration::from_ticks(*sustain_transition as u64),
+						on_period_ticks: *sustain_transition,
 					}
 				}
 			}

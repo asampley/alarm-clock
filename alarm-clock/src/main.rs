@@ -7,7 +7,9 @@ use embassy_executor::Spawner;
 use alarm_clock::info;
 use alarm_clock::startup;
 
-#[esp_hal_embassy::main]
+esp_bootloader_esp_idf::esp_app_desc!();
+
+#[esp_rtos::main]
 async fn main(spawner: Spawner) {
 	info!("Embassy initialized!");
 

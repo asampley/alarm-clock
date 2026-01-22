@@ -7,7 +7,7 @@ mod xtensa {
 
 	use embedded_hal::i2c::ErrorType;
 
-	use esp_hal::gpio::{AnyPin, Flex, Input, Level, Output, Pull};
+	use esp_hal::gpio::{AnyPin, DriveMode, Flex, Input, InputConfig, Level, Output, OutputConfig, Pull};
 	use esp_hal::i2c::master::{AnyI2c, I2c};
 	use esp_hal::Async;
 
@@ -16,32 +16,36 @@ mod xtensa {
 	pub type Buzzer = crate::circuit::buzzer::Buzzer<Output<'static>>;
 	pub type Dht11 = crate::circuit::dht::Dht11<Flex<'static>>;
 
-	impl From<AnyPin> for Dht11 {
-		fn from(pin: AnyPin) -> Self {
+	impl From<AnyPin<'static>> for Dht11 {
+		fn from(pin: AnyPin<'static>) -> Self {
 			let mut flex = Flex::new(pin);
-			flex.set_as_open_drain(Pull::Up);
+			flex.apply_output_config(
+				&OutputConfig::default()
+					.with_drive_mode(DriveMode::OpenDrain)
+					.with_pull(Pull::Up)
+			);
 
 			Self::new(flex)
 		}
 	}
 
-	impl From<AnyPin> for Buzzer {
-		fn from(pin: AnyPin) -> Self {
-			Self::new(Output::new(pin, Level::Low))
+	impl From<AnyPin<'static>> for Buzzer {
+		fn from(pin: AnyPin<'static>) -> Self {
+			Self::new(Output::new(pin, Level::Low, OutputConfig::default()))
 		}
 	}
 
-	impl From<(AnyPin, Duration)> for Button {
-		fn from((pin, bounce_time): (AnyPin, Duration)) -> Self {
-			Self::new(Input::new(pin, Pull::Up), bounce_time)
+	impl From<(AnyPin<'static>, Duration)> for Button {
+		fn from((pin, bounce_time): (AnyPin<'static>, Duration)) -> Self {
+			Self::new(Input::new(pin, InputConfig::default().with_pull(Pull::Up)), bounce_time)
 		}
 	}
 
 	impl Alphanum {
 		pub fn new_esp_hal(
-			pin: AnyI2c,
-			sda: AnyPin,
-			scl: AnyPin,
+			pin: AnyI2c<'static>,
+			sda: AnyPin<'static>,
+			scl: AnyPin<'static>,
 		) -> Result<Self, <esp_hal::i2c::master::I2c<'static, esp_hal::Async> as ErrorType>::Error>
 		{
 			Self::new(
