@@ -14,6 +14,17 @@ use serde::Deserialize;
 /// Too small a delay reduces volume drastically
 const TICK_S: f64 = 1.0 / embassy_time::TICK_HZ as f64;
 
+#[pre_table::sin_table]
+static SIN: [f64; 128];
+
+fn sin(circle_ratio: f64) -> f64 {
+	SIN[(circle_ratio * 128.0) as usize % 128]
+}
+
+fn cos(circle_ratio: f64) -> f64 {
+	SIN[(circle_ratio * 128.0 + 64.0) as usize % 128]
+}
+
 fn frequency(key: u7) -> f64 {
 	#[pre_table::freq_table]
 	static F: [f64; 128];
