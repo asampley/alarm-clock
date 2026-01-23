@@ -43,16 +43,16 @@ pub async fn modify_settings(f: impl FnOnce(&mut Settings)) {
 
 #[derive(Debug, Error)]
 pub enum SaveError {
-	#[error("flash storage error: {0:?}")]
-	Storage(esp_storage::FlashStorageError),
+	#[error("storage error: {0:?}")]
+	Storage(hal::StorageError),
 	#[error("encoding error: {0}")]
 	Encode(bincode::error::EncodeError),
 }
 
 #[derive(Debug, Error)]
 pub enum LoadError {
-	#[error("flash storage error: {0:?}")]
-	Storage(esp_storage::FlashStorageError),
+	#[error("storage error: {0:?}")]
+	Storage(hal::StorageError),
 	#[error("decoding error: {0}")]
 	Decode(bincode::error::DecodeError),
 }

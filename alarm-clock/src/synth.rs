@@ -15,14 +15,16 @@ use serde::Deserialize;
 const TICK_S: f64 = 1.0 / embassy_time::TICK_HZ as f64;
 
 #[pre_table::sin_table]
-static SIN: [f64; 128];
+static SIN: [f64; 256];
+const SIN_L: usize = SIN.len();
+const SIN_LF: f64 = SIN_L as f64;
 
-fn sin(circle_ratio: f64) -> f64 {
-	SIN[(circle_ratio * 128.0) as usize % 128]
+const fn sin(circle_ratio: f64) -> f64 {
+	SIN[(circle_ratio * SIN_LF) as usize % SIN_L]
 }
 
-fn cos(circle_ratio: f64) -> f64 {
-	SIN[(circle_ratio * 128.0 + 64.0) as usize % 128]
+const fn cos(circle_ratio: f64) -> f64 {
+	SIN[((circle_ratio + 0.5) * SIN_LF) as usize % SIN_L]
 }
 
 fn frequency(key: u7) -> f64 {
@@ -152,7 +154,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 
 		let mut on_period = 0.0;
 
-		for (_, (ref mut sound, since_play)) in &mut self.notes {
+		for (_, (sound, since_play)) in &mut self.notes {
 			let instrument_config = self.config.instrument_config(sound.instrument);
 
 			let t = *since_play + sound.period;

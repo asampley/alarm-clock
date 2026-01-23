@@ -4,7 +4,6 @@
 
 use defmt::Debug2Format;
 use defmt_rtt as _;
-use esp_backtrace as _;
 
 pub use defmt::{debug, error, info, trace, warn};
 
@@ -13,17 +12,20 @@ use embassy_executor::{SpawnError, Spawner};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::lazy_lock::LazyLock;
 
-use embassy_time::Duration;
-
-use esp_hal::gpio::Pin;
-
 use futures_lite::FutureExt;
+
+mod hal;
 
 use tasks::sensors::sensor_task;
 use thiserror::Error;
 
 pub mod circuit;
-use circuit::hal::{Alphanum, Button, Buzzer, Dht11};
+use circuit::hal::{
+	Alphanum,
+	Button,
+	Buzzer,
+	Dht11,
+};
 
 pub mod tweaks;
 use tweaks::Config;
@@ -31,7 +33,7 @@ use tweaks::Config;
 pub mod message;
 use message::TimerMessage;
 use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SynthMessage};
-use message::{ButtonDirection, ButtonFunction};
+use message::ButtonFunction;
 
 mod midi_dir;
 use midi_dir::MIDI_DIR;
@@ -97,7 +99,7 @@ pub enum Error {
 	#[error("failed to spawn task")]
 	SpawnError(SpawnError),
 	#[error("pin communication failed")]
-	EspHalI2c(esp_hal::i2c::master::Error),
+	HalI2c(hal::HalI2cError),
 }
 
 impl From<SpawnError> for Error {
@@ -106,48 +108,27 @@ impl From<SpawnError> for Error {
 	}
 }
 
-impl From<esp_hal::i2c::master::Error> for Error {
-	fn from(value: esp_hal::i2c::master::Error) -> Self {
-		Self::EspHalI2c(value)
+impl From<hal::HalI2cError> for Error {
+	fn from(value: hal::HalI2cError) -> Self {
+		Self::HalI2c(value)
 	}
+}
+
+struct Devices {
+	alphanum: Alphanum,
+	buzzer: Buzzer,
+	buttons: [(ButtonFunction, Button); 3],
+	humid_temp: Dht11,
 }
 
 pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	let config = CONFIG.get();
-
-	let p = esp_hal::init(esp_hal::Config::default()
-		.with_cpu_clock(esp_hal::clock::CpuClock::max())
-	);
-
-	esp_rtos::start(esp_hal::timer::timg::TimerGroup::new(p.TIMG0).timer0);
-
-	// create buzzer controller
-	let buzzer = Buzzer::from(p.GPIO14.degrade());
 	let synth = Synth::new(config.synth_config.clone());
 
-	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
+	let Devices { mut alphanum, buzzer, buttons, humid_temp } = hal::setup_hardware(config)?;
 
-	// create button pollers
-	let buttons = [
-		(ButtonFunction::Select, p.GPIO1.degrade()),
-		(
-			ButtonFunction::Direction(ButtonDirection::Prev),
-			p.GPIO3.degrade(),
-		),
-		(
-			ButtonFunction::Direction(ButtonDirection::Next),
-			p.GPIO2.degrade(),
-		),
-	]
-	.into_iter()
-	.map(|(f, p)| (f, Button::from((p, button_bounce_time))));
-
-	// create alphanum controller
-	let mut alphanum = Alphanum::new_esp_hal(p.I2C0.into(), p.GPIO11.into(), p.GPIO12.into())?;
 	alphanum.set_brightness(config.brightness).await?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
-
-	let humid_temp = Dht11::from(p.GPIO13.degrade());
 
 	// load settings
 	match load_settings().await {
