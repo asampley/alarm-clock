@@ -1,7 +1,7 @@
 use embassy_time::Timer;
 use embedded_hal::digital::OutputPin;
 
-use crate::circuit::{buzzer, hal};
+use crate::circuit::buzzer::Buzzer;
 use crate::message::SynthMessage;
 use crate::synth::Synth;
 use crate::{error, Receiver};
@@ -10,7 +10,7 @@ use crate::{MIDI_NOTE_CAPACITY, SYNTH_NOTES};
 #[embassy_executor::task]
 pub async fn update_buzzer(
 	note_receiver: Receiver<SynthMessage, MIDI_NOTE_CAPACITY>,
-	mut buzzer: hal::Buzzer,
+	mut buzzer: Buzzer,
 	mut synth: Synth<SYNTH_NOTES>,
 ) {
 	loop {
@@ -28,10 +28,10 @@ pub async fn update_buzzer(
 	}
 }
 
-async fn drive_buzzer<P: OutputPin, const N: usize>(
+async fn drive_buzzer<const N: usize>(
 	synth: &mut Synth<N>,
-	buzzer: &mut buzzer::Buzzer<P>,
-) -> Result<(), P::Error> {
+	buzzer: &mut Buzzer,
+) -> Result<(), crate::circuit::buzzer::Error> {
 	let pulse = synth.update();
 	buzzer.set_high()?;
 	embassy_time::block_for(pulse.on);

@@ -5,7 +5,7 @@ use heapless::String;
 
 use crate::{Receiver, CONFIG};
 
-use crate::circuit::hal::Alphanum;
+use crate::circuit::alphanum::Alphanum;
 use crate::message::AlphanumMessage;
 
 const BLANKS: &str = "    ";

@@ -1,16 +1,20 @@
 use core::ops::{Deref, DerefMut};
 
 use embassy_time::{Duration, Instant};
-use embedded_hal::digital::InputPin;
+use embedded_hal::digital::{ErrorType, InputPin};
 use embedded_hal_async::digital::Wait;
 
-pub struct Button<Pin> {
+/// Required to be concrete for embassy tasks
+pub type Pin = impl InputPin + Wait + ErrorType<Error: defmt::Format>;
+pub type Error = <Pin as ErrorType>::Error;
+
+pub struct Button {
 	pin: Pin,
 	bounce_time: Duration,
 	last_event: Option<Instant>,
 }
 
-impl<Pin> Button<Pin> {
+impl Button {
 	// expects pull up pin
 	pub fn new(pin: Pin, bounce_time: Duration) -> Self {
 		Self {
@@ -19,24 +23,8 @@ impl<Pin> Button<Pin> {
 			last_event: None,
 		}
 	}
-}
 
-impl<Pin> Deref for Button<Pin> {
-	type Target = Pin;
-
-	fn deref(&self) -> &Self::Target {
-		&self.pin
-	}
-}
-
-impl<Pin> DerefMut for Button<Pin> {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut self.pin
-	}
-}
-
-impl<Pin: Wait + InputPin> Button<Pin> {
-	pub async fn wait_press_release(&mut self) -> Result<(), Pin::Error> {
+	pub async fn wait_press_release(&mut self) -> Result<(), Error> {
 		loop {
 			self.wait_for_any_edge().await?;
 
@@ -49,5 +37,19 @@ impl<Pin: Wait + InputPin> Button<Pin> {
 				return Ok(());
 			}
 		}
+	}
+}
+
+impl Deref for Button {
+	type Target = Pin;
+
+	fn deref(&self) -> &Self::Target {
+		&self.pin
+	}
+}
+
+impl DerefMut for Button {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.pin
 	}
 }

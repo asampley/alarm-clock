@@ -5,7 +5,7 @@ members = [
 	"dir-static",
 	"dir-static-macro",
 ]
-resolver = "2"
+resolver = "3"
 
 [profile.dev]
 # Rust debug is too slow.

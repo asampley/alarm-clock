@@ -1,15 +1,14 @@
 use crate::{Devices, Error};
 use crate::tweaks::Config;
-use crate::circuit::hal::{
-	Alphanum,
-	Button,
-	Buzzer,
-	Dht11,
+use crate::circuit::{
+	alphanum::Alphanum,
+	button::Button,
+	buzzer::Buzzer,
+	dht::Dht11,
 };
 use crate::message::{ButtonDirection, ButtonFunction};
 
 use embassy_time::Duration;
-
 
 #[cfg(target_arch = "xtensa")]
 pub use xtensa::*;
@@ -27,7 +26,7 @@ mod xtensa {
 
 	use super::*;
 
-	pub type HalI2cError = esp_hal::i2c::master::Error;
+	pub type HalI2cError = crate::circuit::alphanum::Error;
 
 	pub fn setup_hardware(config: &Config) -> Result<Devices, Error> {
 		use esp_hal::gpio::Pin;
@@ -58,7 +57,7 @@ mod xtensa {
 		.map(|(f, p)| (f, Button::from((p, button_bounce_time))));
 
 		// create alphanum controller
-		let alphanum = Alphanum::new_esp_hal(p.I2C0.into(), p.GPIO11.into(), p.GPIO12.into())?;
+		let alphanum = Alphanum::new_esp_hal(p.I2C0.into(), p.GPIO11.into(), p.GPIO12.into()).map_err(Error::HalI2c)?;
 
 		// create temp/humid sensor driver
 		let humid_temp = Dht11::from(p.GPIO13.degrade());

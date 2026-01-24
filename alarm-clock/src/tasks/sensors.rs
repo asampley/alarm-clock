@@ -1,4 +1,4 @@
-use crate::circuit::hal::Dht11;
+use crate::circuit::dht::Dht11;
 use crate::message::{EventMessage, SensorEvent, SensorMessage};
 use crate::Receiver;
 use crate::{error, info, Sender};

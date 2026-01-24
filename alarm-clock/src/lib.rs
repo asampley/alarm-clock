@@ -1,5 +1,6 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
+#![feature(type_alias_impl_trait)]
 #![feature(never_type)]
 
 use defmt::Debug2Format;
@@ -20,11 +21,11 @@ use tasks::sensors::sensor_task;
 use thiserror::Error;
 
 pub mod circuit;
-use circuit::hal::{
-	Alphanum,
-	Button,
-	Buzzer,
-	Dht11,
+use circuit::{
+	alphanum::Alphanum,
+	button::Button,
+	buzzer::Buzzer,
+	dht::Dht11,
 };
 
 pub mod tweaks;
@@ -108,12 +109,6 @@ impl From<SpawnError> for Error {
 	}
 }
 
-impl From<hal::HalI2cError> for Error {
-	fn from(value: hal::HalI2cError) -> Self {
-		Self::HalI2c(value)
-	}
-}
-
 struct Devices {
 	alphanum: Alphanum,
 	buzzer: Buzzer,
@@ -127,7 +122,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 
 	let Devices { mut alphanum, buzzer, buttons, humid_temp } = hal::setup_hardware(config)?;
 
-	alphanum.set_brightness(config.brightness).await?;
+	alphanum.set_brightness(config.brightness).await.map_err(Error::HalI2c)?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	// load settings
