@@ -1,6 +1,6 @@
 pub mod alarm;
-pub mod alphanum;
 pub mod buzzer;
+pub mod i2c;
 pub mod input;
 pub mod player;
 pub mod sensors;

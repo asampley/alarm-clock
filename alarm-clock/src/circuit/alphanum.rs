@@ -1,5 +1,7 @@
 use embedded_hal::i2c::I2c as SyncI2c;
-use embedded_hal_async::i2c::{ErrorType, I2c as AsyncI2c};
+use embedded_hal_async::i2c::I2c as AsyncI2c;
+
+use crate::tasks::i2c::{I2c, Error};
 
 #[allow(dead_code)]
 const HT16K33_BLINK_CMD: u8 = 0x80; //< I2C register for BLINK setting
@@ -17,12 +19,7 @@ const HT16K33_BLINK_HALFHZ: u8 = 3; //< I2C value for 0.5 Hz blink
 #[allow(dead_code)]
 const HT16K33_CMD_BRIGHTNESS: u8 = 0xE0; //< I2C register for BRIGHTNESS setting
 
-/// Required to be concrete for embassy tasks
-pub type I2c = impl SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>;
-pub type Error = <I2c as ErrorType>::Error;
-
 pub struct Alphanum {
-	i2c: I2c,
 	ascii_uppercase: bool,
 }
 
@@ -36,30 +33,29 @@ pub enum BlinkRate {
 }
 
 impl Alphanum {
-	pub fn new(pin: I2c) -> Result<Self, Error> {
+	pub fn new(i2c: &mut I2c) -> Result<Self, Error> {
 		let mut val = Self {
-			i2c: pin,
 			ascii_uppercase: false,
 		};
 
 		// turn on oscillator
-		val.write_sync(&[0x21])?;
+		val.write_sync(i2c, &[0x21])?;
 
-		val.set_brightness_sync(15)?;
-		val.blink_rate_sync(BlinkRate::Off)?;
+		val.set_brightness_sync(i2c, 15)?;
+		val.blink_rate_sync(i2c, BlinkRate::Off)?;
 
 		Ok(val)
 	}
 
-	fn write_sync(&mut self, write: &[u8]) -> Result<(), Error> {
-		SyncI2c::write(&mut self.i2c, 0x70, write)
+	fn write_sync(&self, i2c: &mut I2c, write: &[u8]) -> Result<(), Error> {
+		SyncI2c::write(i2c, 0x70, write)
 	}
 
-	pub fn set_brightness_sync(&mut self, brightness: u8) -> Result<(), Error> {
-		self.write_sync(&[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)])
+	pub fn set_brightness_sync(&self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
+		self.write_sync(i2c, &[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)])
 	}
 
-	pub fn blink_rate_sync(&mut self, blink_rate: BlinkRate) -> Result<(), Error> {
+	pub fn blink_rate_sync(&mut self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -67,19 +63,19 @@ impl Alphanum {
 			BlinkRate::HalfHz => HT16K33_BLINK_HALFHZ,
 		};
 
-		self.write_sync(&[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
+		self.write_sync(i2c, &[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
 	}
 
-	async fn write(&mut self, write: &[u8]) -> Result<(), Error> {
-		AsyncI2c::write(&mut self.i2c, 0x70, write).await
+	async fn write(&mut self, i2c: &mut I2c, write: &[u8]) -> Result<(), Error> {
+		AsyncI2c::write(i2c, 0x70, write).await
 	}
 
-	pub async fn set_brightness(&mut self, brightness: u8) -> Result<(), Error> {
-		self.write(&[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)])
+	pub async fn set_brightness(&mut self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
+		self.write(i2c, &[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)])
 			.await
 	}
 
-	pub async fn blink_rate(&mut self, blink_rate: BlinkRate) -> Result<(), Error> {
+	pub async fn blink_rate(&mut self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -87,7 +83,7 @@ impl Alphanum {
 			BlinkRate::HalfHz => HT16K33_BLINK_HALFHZ,
 		};
 
-		self.write(&[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
+		self.write(i2c, &[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
 			.await
 	}
 
@@ -96,7 +92,7 @@ impl Alphanum {
 	}
 
 	/// display up to 4 chars from `string`
-	pub async fn display(&mut self, string: &str) -> Result<(), Error> {
+	pub async fn display(&mut self, i2c: &mut I2c, string: &str) -> Result<(), Error> {
 		let mut bytes = [0_u8; 9];
 
 		for (i, mut c) in string.chars().enumerate().take(4) {
@@ -109,7 +105,7 @@ impl Alphanum {
 			bytes[i * 2 + 2] = char_bytes[1];
 		}
 
-		self.write(&bytes).await
+		self.write(i2c, &bytes).await
 	}
 }
 

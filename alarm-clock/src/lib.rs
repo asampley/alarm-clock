@@ -17,7 +17,6 @@ use futures_lite::FutureExt;
 
 mod hal;
 
-use tasks::sensors::sensor_task;
 use thiserror::Error;
 
 pub mod circuit;
@@ -55,10 +54,11 @@ use states::{
 
 mod tasks;
 use tasks::alarm::alarm_task;
-use tasks::alphanum::alphanum_task;
+use tasks::i2c::{alphanum_task, I2c};
 use tasks::buzzer::update_buzzer;
 use tasks::input::poll_input;
 use tasks::player::midi_player;
+use tasks::sensors::sensor_task;
 use tasks::timer::timer_task;
 
 mod time;
@@ -100,7 +100,7 @@ pub enum Error {
 	#[error("failed to spawn task")]
 	SpawnError(SpawnError),
 	#[error("pin communication failed")]
-	HalI2c(hal::HalI2cError),
+	I2c(tasks::i2c::Error),
 }
 
 impl From<SpawnError> for Error {
@@ -110,19 +110,20 @@ impl From<SpawnError> for Error {
 }
 
 struct Devices {
-	alphanum: Alphanum,
 	buzzer: Buzzer,
 	buttons: [(ButtonFunction, Button); 3],
 	humid_temp: Dht11,
+	i2c: I2c,
 }
 
 pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	let config = CONFIG.get();
 	let synth = Synth::new(config.synth_config.clone());
 
-	let Devices { mut alphanum, buzzer, buttons, humid_temp } = hal::setup_hardware(config)?;
+	let Devices { buzzer, buttons, humid_temp, mut i2c } = hal::setup_hardware(config)?;
 
-	alphanum.set_brightness(config.brightness).await.map_err(Error::HalI2c)?;
+	let mut alphanum = Alphanum::new(&mut i2c).map_err(Error::I2c)?;
+	alphanum.set_brightness(&mut i2c, config.brightness).await.map_err(Error::I2c)?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
 	// load settings
@@ -147,7 +148,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	))?;
 
 	// start display task
-	spawner.spawn(alphanum_task(alphanum, ALPHANUM_CHANNEL.receiver()))?;
+	spawner.spawn(alphanum_task(i2c, alphanum, ALPHANUM_CHANNEL.receiver()))?;
 
 	// start alarm task
 	spawner.spawn(alarm_task(EVENT_CHANNEL.sender(), SENSOR_CHANNEL.sender()))?;
