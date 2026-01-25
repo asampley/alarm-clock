@@ -419,13 +419,12 @@ impl State for StateAlarm {
 			if self.display_rotate < Instant::now() {
 				self.display = match self.display {
 					AlarmDisplay::Time => {
-						if self.dht.is_none() {
+						if self.dht.is_none() || self.bmp.is_none() {
 							// try another sensor reading here in case the last failed
 							self.sensor_publisher.publish(SensorMessage::Update).await;
-							AlarmDisplay::Time
-						} else {
-							AlarmDisplay::Sensor(Default::default())
 						}
+
+						AlarmDisplay::Sensor(Default::default())
 					}
 					AlarmDisplay::Sensor(s) => {
 						s.next().map_or(AlarmDisplay::Time, AlarmDisplay::Sensor)
