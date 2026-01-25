@@ -8,10 +8,10 @@ use midly::MidiMessage;
 use midly::num::u4;
 
 use crate::circuit::alphanum::{BlinkRate, Char};
-use crate::circuit::bmp::BmpReading;
-use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
 use crate::util::Calf;
+
+use super::event::*;
 
 #[derive(Format)]
 pub enum EventMessage {
@@ -22,35 +22,10 @@ pub enum EventMessage {
 	Alarm,
 }
 
-#[derive(Format)]
-pub enum ButtonEvent {
-	Press(ButtonFunction),
-
-	Release(ButtonFunction),
-}
-
 impl From<ButtonEvent> for EventMessage {
 	fn from(from: ButtonEvent) -> Self {
 		EventMessage::Button(from)
 	}
-}
-
-#[derive(Copy, Clone, Eq, Format, PartialEq)]
-pub enum ButtonFunction {
-	Direction(ButtonDirection),
-	Select,
-}
-
-#[derive(Copy, Clone, Eq, Format, PartialEq)]
-pub enum ButtonDirection {
-	Prev,
-	Next,
-}
-
-#[derive(Format)]
-pub enum SongEvent {
-	Start(&'static str),
-	End(&'static str),
 }
 
 impl From<SongEvent> for EventMessage {
@@ -59,24 +34,10 @@ impl From<SongEvent> for EventMessage {
 	}
 }
 
-#[derive(Format)]
-pub enum TimerEvent {
-	Start(Instant),
-	End,
-}
-
 impl From<TimerEvent> for EventMessage {
 	fn from(from: TimerEvent) -> Self {
 		EventMessage::Timer(from)
 	}
-}
-
-#[derive(Format)]
-pub enum SensorEvent {
-	Dht(Dht11Reading),
-	DhtError,
-	Bmp(BmpReading),
-	BmpError,
 }
 
 #[derive(Debug)]

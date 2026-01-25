@@ -1,5 +1,3 @@
-use embassy_sync::pubsub::DynSubscriber;
-
 use embassy_time::{Duration, Instant, Timer};
 
 use embedded_hal::i2c::I2c as SyncI2c;
@@ -9,11 +7,12 @@ use futures_lite::FutureExt;
 
 use heapless::{String, Vec};
 
-use crate::{CONFIG, Receiver, Sender, error, info};
-
+use crate::channel::event::SensorEvent;
+use crate::channel::message::{AlphanumMessage, EventMessage, SensorMessage};
+use crate::channel::{AlphanumReceiver, EventSender, SensorSubscriber};
 use crate::circuit::alphanum::{Alphanum, Char, char_to_alphanum};
 use crate::circuit::bmp::Bmp180;
-use crate::message::{AlphanumMessage, EventMessage, SensorEvent, SensorMessage};
+use crate::{CONFIG, error, info};
 
 /// Required to be concrete for embassy tasks
 pub type I2c = impl SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>;
@@ -39,9 +38,9 @@ pub async fn i2c_task(
 	mut i2c: I2c,
 	alphanum: Alphanum,
 	bmp: Bmp180,
-	event_sender: Sender<EventMessage, 16>,
-	alphanum_receiver: Receiver<AlphanumMessage, 1>,
-	mut sensor_subscriber: DynSubscriber<'static, SensorMessage>,
+	event_sender: EventSender,
+	alphanum_receiver: AlphanumReceiver,
+	mut sensor_subscriber: SensorSubscriber<'static>,
 ) -> ! {
 	let mut text_str; // must keep text in scope to create an iterator
 	let mut text_rendered; // must keep text in scope to create an iterator

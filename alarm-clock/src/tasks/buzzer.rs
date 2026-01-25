@@ -1,11 +1,12 @@
 use embassy_time::Timer;
 use embedded_hal::digital::OutputPin;
 
+use crate::channel::Receiver;
+use crate::channel::message::SynthMessage;
 use crate::circuit::buzzer::Buzzer;
-use crate::message::SynthMessage;
+use crate::error;
 use crate::synth::Synth;
 use crate::{MIDI_NOTE_CAPACITY, SYNTH_NOTES};
-use crate::{Receiver, error};
 
 #[embassy_executor::task]
 pub async fn update_buzzer(

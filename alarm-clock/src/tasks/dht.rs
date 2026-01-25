@@ -1,14 +1,14 @@
-use embassy_sync::pubsub::DynSubscriber;
-
+use crate::channel::event::SensorEvent;
+use crate::channel::message::{EventMessage, SensorMessage};
+use crate::channel::{EventSender, SensorSubscriber};
 use crate::circuit::dht::Dht11;
-use crate::message::{EventMessage, SensorEvent, SensorMessage};
-use crate::{Sender, error, info};
+use crate::{error, info};
 
 #[embassy_executor::task]
 pub async fn dht_task(
 	mut humid_temp: Dht11,
-	mut sensor_subscriber: DynSubscriber<'static, SensorMessage>,
-	event_sender: Sender<EventMessage, 16>,
+	mut sensor_subscriber: SensorSubscriber<'static>,
+	event_sender: EventSender,
 ) {
 	loop {
 		match sensor_subscriber.next_message_pure().await {

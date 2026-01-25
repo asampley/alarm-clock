@@ -1,5 +1,5 @@
+use crate::channel::event::{ButtonDirection, ButtonFunction};
 use crate::circuit::{button::Button, buzzer::Buzzer, dht::Dht11};
-use crate::message::{ButtonDirection, ButtonFunction};
 use crate::tweaks::Config;
 use crate::{Devices, Error};
 

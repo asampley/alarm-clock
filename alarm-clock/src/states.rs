@@ -1,29 +1,29 @@
 use embassy_time::{Duration, Instant, Timer};
 
 use embassy_sync::lazy_lock::LazyLock;
-use embassy_sync::pubsub::DynPublisher;
 
 use enum_dispatch::enum_dispatch;
 use futures_lite::FutureExt;
 use heapless::{String, Vec};
 
+use crate::channel::event::{
+	ButtonDirection, ButtonEvent, ButtonFunction, SensorEvent, SongEvent, TimerEvent,
+};
+use crate::channel::message::{
+	AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, TimerMessage,
+};
+use crate::channel::{AlphanumSender, PlayerSender, SensorPublisher, TimerSender};
 use crate::circuit::alphanum::BlinkRate;
 use crate::circuit::bmp::BmpReading;
 use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
+use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 use crate::storage::{modify_settings, settings};
 use crate::tasks::alarm::alarm_setter;
 use crate::tasks::timer::TIMERS;
 use crate::time::{TimeRem, set_time, time_since, time_until};
 use crate::util::Calf;
-use crate::{ClockTime, MIDI_DIR, Sender};
-
-use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
-
-use crate::message::{
-	AlphanumMessage, ButtonDirection, ButtonEvent, ButtonFunction, EventMessage, PlayerMessage,
-	SensorEvent, SensorMessage, SongEvent, TimerEvent, TimerMessage,
-};
+use crate::{ClockTime, MIDI_DIR};
 
 static TIMES: LazyLock<Vec<ClockTime, { 24 * 60 }>> = LazyLock::new(|| {
 	(0..24 * 60)
@@ -31,10 +31,7 @@ static TIMES: LazyLock<Vec<ClockTime, { 24 * 60 }>> = LazyLock::new(|| {
 		.collect::<Vec<_, { 24 * 60 }>>()
 });
 
-async fn send_time<const SIZE: usize>(
-	alphanum_sender: Sender<AlphanumMessage, SIZE>,
-	time: ClockTime,
-) {
+async fn send_time(alphanum_sender: AlphanumSender, time: ClockTime) {
 	alphanum_sender
 		.send(AlphanumMessage::Static(Calf::Owned(time.as_chars())))
 		.await
@@ -136,18 +133,18 @@ pub trait State {
 }
 
 #[enum_dispatch(State)]
-pub enum ConcreteState {
+pub enum ConcreteState<'a> {
 	Clock(StateClock),
 	MainMenu(StateMainMenu),
 	ClockSet(StateClockSet),
-	Alarm(StateAlarm),
+	Alarm(StateAlarm<'a>),
 	AlarmTime(StateAlarmTimeSet),
 	AlarmSong(StateAlarmSongSet),
 	Timer(StateTimer),
 	TimerSet(StateTimerSet),
 	TimerRunning(StateTimerRunning),
 	TimerMenu(StateTimerMenu),
-	Sensors(StateSensors),
+	Sensors(StateSensors<'a>),
 	Play(StatePlay),
 }
 
@@ -168,15 +165,12 @@ pub enum StateTransition {
 }
 
 pub struct StateClock {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	player_sender: Sender<PlayerMessage, 1>,
+	alphanum_sender: AlphanumSender,
+	player_sender: PlayerSender,
 }
 
 impl StateClock {
-	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		player_sender: Sender<PlayerMessage, 1>,
-	) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender, player_sender: PlayerSender) -> Self {
 		Self {
 			alphanum_sender,
 			player_sender,
@@ -246,12 +240,12 @@ enum MenuContents<T: 'static> {
 }
 
 pub struct StateMainMenu {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
+	alphanum_sender: AlphanumSender,
 	mode_selector: LinearSelector<'static, MenuItem<StateTransition>>,
 }
 
 impl StateMainMenu {
-	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender) -> Self {
 		const MAIN_MENU: &[MenuItem<StateTransition>] = &[
 			MenuItem::leaf("Back", StateTransition::Clock),
 			MenuItem::leaf("Clock Set", StateTransition::ClockSet),
@@ -316,12 +310,12 @@ impl State for StateMainMenu {
 }
 
 pub struct StateClockSet {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
+	alphanum_sender: AlphanumSender,
 	time_selector: BinarySelector<'static, ClockTime>,
 }
 
 impl StateClockSet {
-	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender) -> Self {
 		Self {
 			alphanum_sender,
 			time_selector: BinarySelector::new(TIMES.get()),
@@ -363,21 +357,21 @@ enum AlarmDisplay {
 	Sensor(SensorDisplay),
 }
 
-pub struct StateAlarm {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	player_sender: Sender<PlayerMessage, 1>,
-	sensor_publisher: DynPublisher<'static, SensorMessage>,
+pub struct StateAlarm<'a> {
+	alphanum_sender: AlphanumSender,
+	player_sender: PlayerSender,
+	sensor_publisher: &'a SensorPublisher<'a>,
 	bmp: Option<BmpReading>,
 	dht: Option<Dht11Reading>,
 	display: AlarmDisplay,
 	display_rotate: Instant,
 }
 
-impl StateAlarm {
+impl<'a> StateAlarm<'a> {
 	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		player_sender: Sender<PlayerMessage, 1>,
-		sensor_publisher: DynPublisher<'static, SensorMessage>,
+		alphanum_sender: AlphanumSender,
+		player_sender: PlayerSender,
+		sensor_publisher: &'a SensorPublisher<'a>,
 	) -> Self {
 		Self {
 			alphanum_sender,
@@ -391,7 +385,7 @@ impl StateAlarm {
 	}
 }
 
-impl State for StateAlarm {
+impl State for StateAlarm<'_> {
 	async fn init(&mut self) {
 		self.alphanum_sender
 			.send(AlphanumMessage::Blink(BlinkRate::OneHz))
@@ -486,12 +480,12 @@ impl State for StateAlarm {
 }
 
 pub struct StateAlarmTimeSet {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
+	alphanum_sender: AlphanumSender,
 	time_selector: BinarySelector<'static, ClockTime>,
 }
 
 impl StateAlarmTimeSet {
-	pub fn new(alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender) -> Self {
 		Self {
 			alphanum_sender,
 			time_selector: BinarySelector::new(TIMES.get()),
@@ -529,16 +523,13 @@ impl State for StateAlarmTimeSet {
 }
 
 pub struct StateAlarmSongSet {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	player_sender: Sender<PlayerMessage, 1>,
+	alphanum_sender: AlphanumSender,
+	player_sender: PlayerSender,
 	midi_selector: LinearSelector<'static, Midi>,
 }
 
 impl StateAlarmSongSet {
-	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		player_sender: Sender<PlayerMessage, 1>,
-	) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender, player_sender: PlayerSender) -> Self {
 		Self {
 			alphanum_sender,
 			player_sender,
@@ -603,16 +594,13 @@ impl State for StateAlarmSongSet {
 }
 
 pub struct StatePlay {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	player_sender: Sender<PlayerMessage, 1>,
+	alphanum_sender: AlphanumSender,
+	player_sender: PlayerSender,
 	midi_selector: LinearSelector<'static, Midi>,
 }
 
 impl StatePlay {
-	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		player_sender: Sender<PlayerMessage, 1>,
-	) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender, player_sender: PlayerSender) -> Self {
 		Self {
 			alphanum_sender,
 			player_sender,
@@ -673,11 +661,11 @@ impl State for StatePlay {
 
 pub struct StateTimerRunning {
 	timer_instant: Instant,
-	alphanum_sender: Sender<AlphanumMessage, 1>,
+	alphanum_sender: AlphanumSender,
 }
 
 impl StateTimerRunning {
-	pub fn new(timer_instant: Instant, alphanum_sender: Sender<AlphanumMessage, 1>) -> Self {
+	pub fn new(timer_instant: Instant, alphanum_sender: AlphanumSender) -> Self {
 		Self {
 			timer_instant,
 			alphanum_sender,
@@ -737,16 +725,16 @@ impl State for StateTimerRunning {
 }
 
 pub struct StateTimer {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	player_sender: Sender<PlayerMessage, 1>,
-	timer_sender: Sender<TimerMessage, 1>,
+	alphanum_sender: AlphanumSender,
+	player_sender: PlayerSender,
+	timer_sender: TimerSender,
 }
 
 impl StateTimer {
 	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		player_sender: Sender<PlayerMessage, 1>,
-		timer_sender: Sender<TimerMessage, 1>,
+		alphanum_sender: AlphanumSender,
+		player_sender: PlayerSender,
+		timer_sender: TimerSender,
 	) -> Self {
 		Self {
 			alphanum_sender,
@@ -843,16 +831,13 @@ impl State for StateTimer {
 }
 
 pub struct StateTimerSet {
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	timer_sender: Sender<TimerMessage, 1>,
+	alphanum_sender: AlphanumSender,
+	timer_sender: TimerSender,
 	exponential_selector: ExponentialSelector,
 }
 
 impl StateTimerSet {
-	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		timer_sender: Sender<TimerMessage, 1>,
-	) -> Self {
+	pub fn new(alphanum_sender: AlphanumSender, timer_sender: TimerSender) -> Self {
 		Self {
 			alphanum_sender,
 			timer_sender,
@@ -944,20 +929,17 @@ impl SensorDisplay {
 	}
 }
 
-pub struct StateSensors {
+pub struct StateSensors<'a> {
 	request_update: Instant,
 	bmp_last: Option<BmpReading>,
 	dht_last: Option<Dht11Reading>,
 	display: SensorDisplay,
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	sensor_publisher: DynPublisher<'static, SensorMessage>,
+	alphanum_sender: AlphanumSender,
+	sensor_publisher: &'a SensorPublisher<'a>,
 }
 
-impl StateSensors {
-	pub fn new(
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		sensor_publisher: DynPublisher<'static, SensorMessage>,
-	) -> Self {
+impl<'a> StateSensors<'a> {
+	pub fn new(alphanum_sender: AlphanumSender, sensor_publisher: &'a SensorPublisher<'a>) -> Self {
 		Self {
 			request_update: Instant::now(),
 			bmp_last: None,
@@ -969,7 +951,7 @@ impl StateSensors {
 	}
 }
 
-impl State for StateSensors {
+impl State for StateSensors<'_> {
 	async fn between_events(&mut self) -> ! {
 		loop {
 			let now = Instant::now();
@@ -1038,16 +1020,16 @@ enum TimerMenuItem {
 
 pub struct StateTimerMenu {
 	timer_instant: Instant,
-	alphanum_sender: Sender<AlphanumMessage, 1>,
-	timer_sender: Sender<TimerMessage, 1>,
+	alphanum_sender: AlphanumSender,
+	timer_sender: TimerSender,
 	menu_selector: LinearSelector<'static, MenuItem<TimerMenuItem>>,
 }
 
 impl StateTimerMenu {
 	pub fn new(
 		timer_instant: Instant,
-		alphanum_sender: Sender<AlphanumMessage, 1>,
-		timer_sender: Sender<TimerMessage, 1>,
+		alphanum_sender: AlphanumSender,
+		timer_sender: TimerSender,
 	) -> Self {
 		const TIMER_MENU: &[MenuItem<TimerMenuItem>] = &[
 			MenuItem::leaf("Back", TimerMenuItem::Back),

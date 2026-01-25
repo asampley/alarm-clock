@@ -1,7 +1,7 @@
 use embassy_time::{Duration, Instant, TICK_HZ, TimeoutError, WithTimeout};
 use heapless::String;
 
-use crate::Watch;
+use crate::channel::Watch;
 
 // not necessarily in past due to signed-ness of `embassy_time::Instant`
 static TIME_ZERO: Watch<Instant, 64> = Watch::new_with(Instant::from_ticks(0));

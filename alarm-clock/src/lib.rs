@@ -10,7 +10,6 @@ pub use defmt::{debug, error, info, trace, warn};
 
 use embassy_executor::{SpawnError, Spawner};
 
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::lazy_lock::LazyLock;
 
 use futures_lite::FutureExt;
@@ -25,10 +24,12 @@ use circuit::{alphanum::Alphanum, bmp::Bmp180, button::Button, buzzer::Buzzer, d
 pub mod tweaks;
 use tweaks::Config;
 
-pub mod message;
-use message::ButtonFunction;
-use message::TimerMessage;
-use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SynthMessage};
+pub mod channel;
+use channel::event::ButtonFunction;
+use channel::{
+	AlphanumChannel, Channel, EventChannel, MidiNoteChannel, PlayerChannel, PubSubChannel,
+	SensorPubSub, TimerChannel,
+};
 
 mod midi_dir;
 use midi_dir::MIDI_DIR;
@@ -63,18 +64,6 @@ use crate::storage::load_settings;
 
 mod util;
 
-type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CriticalSectionRawMutex, T, CAP>;
-type Sender<T, const CAP: usize> =
-	embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, T, CAP>;
-type Receiver<T, const CAP: usize> =
-	embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, T, CAP>;
-type PubSubChannel<T, const CAP: usize, const SUBS: usize, const PUBS: usize> =
-	embassy_sync::pubsub::PubSubChannel<CriticalSectionRawMutex, T, CAP, SUBS, PUBS>;
-type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
-type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
-type RwLock<T> = embassy_sync::rwlock::RwLock<CriticalSectionRawMutex, T>;
-type RwLockReadGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, CriticalSectionRawMutex, T>;
-
 // an instant that marks midnight
 static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 	serde_json_core::from_str(include_str!("../tweaks.json"))
@@ -85,12 +74,12 @@ static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 const MIDI_NOTE_CAPACITY: usize = 64;
 const SYNTH_NOTES: usize = 32;
 
-static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
-static EVENT_CHANNEL: Channel<EventMessage, 16> = Channel::new();
-static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
-static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
-static SENSOR_CHANNEL: PubSubChannel<SensorMessage, 1, 2, 2> = PubSubChannel::new();
-static TIMER_CHANNEL: Channel<TimerMessage, 1> = Channel::new();
+static ALPHANUM_CHANNEL: AlphanumChannel = Channel::new();
+static EVENT_CHANNEL: EventChannel = Channel::new();
+static MIDI_NOTE_CHANNEL: MidiNoteChannel = Channel::new();
+static PLAYER_CHANNEL: PlayerChannel = Channel::new();
+static SENSOR_CHANNEL: SensorPubSub = PubSubChannel::new();
+static TIMER_CHANNEL: TimerChannel = Channel::new();
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -161,13 +150,13 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 		bmp,
 		EVENT_CHANNEL.sender(),
 		ALPHANUM_CHANNEL.receiver(),
-		SENSOR_CHANNEL.dyn_subscriber().unwrap(),
+		SENSOR_CHANNEL.subscriber().unwrap(),
 	))?;
 
 	// start alarm task
 	spawner.spawn(alarm_task(
 		EVENT_CHANNEL.sender(),
-		SENSOR_CHANNEL.dyn_publisher().unwrap(),
+		SENSOR_CHANNEL.publisher().unwrap(),
 	))?;
 
 	// start timer task
@@ -176,13 +165,14 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	// start dht task
 	spawner.spawn(dht_task(
 		humid_temp,
-		SENSOR_CHANNEL.dyn_subscriber().unwrap(),
+		SENSOR_CHANNEL.subscriber().unwrap(),
 		EVENT_CHANNEL.sender(),
 	))?;
 
 	let mut state_transition = StateTransition::Clock;
 
 	let event_receiver = EVENT_CHANNEL.receiver();
+	let sensor_publisher = SENSOR_CHANNEL.publisher().unwrap();
 
 	loop {
 		info!(
@@ -199,7 +189,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			StateTransition::Alarm => StateAlarm::new(
 				ALPHANUM_CHANNEL.sender(),
 				PLAYER_CHANNEL.sender(),
-				SENSOR_CHANNEL.dyn_publisher().unwrap(),
+				&sensor_publisher,
 			)
 			.into(),
 			StateTransition::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
@@ -224,11 +214,9 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			StateTransition::TimerMenu(x) => {
 				StateTimerMenu::new(x, ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
 			}
-			StateTransition::Sensors => StateSensors::new(
-				ALPHANUM_CHANNEL.sender(),
-				SENSOR_CHANNEL.dyn_publisher().unwrap(),
-			)
-			.into(),
+			StateTransition::Sensors => {
+				StateSensors::new(ALPHANUM_CHANNEL.sender(), &sensor_publisher).into()
+			}
 		};
 
 		state_transition = process_state(state, &event_receiver).await;
@@ -237,7 +225,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 
 async fn process_state(
 	mut state: impl State,
-	event_receiver: &Receiver<EventMessage, 16>,
+	event_receiver: &channel::Receiver<channel::message::EventMessage, 16>,
 ) -> StateTransition {
 	info!("Intializing state");
 	state.init().await;

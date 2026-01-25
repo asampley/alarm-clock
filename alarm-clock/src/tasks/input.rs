@@ -1,10 +1,10 @@
 use embedded_hal::digital::InputPin;
 
-use crate::message::ButtonFunction;
-use crate::{Sender, error};
-
+use crate::channel::Sender;
+use crate::channel::event::{ButtonEvent, ButtonFunction};
+use crate::channel::message::EventMessage;
 use crate::circuit::button::Button;
-use crate::message::{ButtonEvent, EventMessage};
+use crate::error;
 
 #[embassy_executor::task(pool_size = 3)]
 pub async fn poll_input(

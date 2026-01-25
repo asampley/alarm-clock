@@ -10,7 +10,8 @@ use hal::STORAGE;
 use embedded_storage::{ReadStorage, Storage};
 use thiserror::Error;
 
-use crate::{RwLock, RwLockReadGuard, error, info};
+use crate::channel::{RwLock, RwLockReadGuard};
+use crate::{error, info};
 
 const SETTINGS_MAX_SIZE: usize = 1024;
 

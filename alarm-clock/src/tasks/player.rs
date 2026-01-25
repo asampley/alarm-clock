@@ -1,13 +1,15 @@
 use core::pin::pin;
 
-use crate::midi_dir::Midi;
-use crate::{MIDI_NOTE_CAPACITY, Receiver, Sender, error, info, warn};
 use embassy_time::{Duration, Instant};
 use futures_lite::{FutureExt, Stream, StreamExt, stream};
 use heapless::{BinaryHeap, Vec, binary_heap::Min};
 
-use crate::message::{EventMessage, PlayerMessage, SongEvent, SynthMessage};
+use crate::channel::event::SongEvent;
+use crate::channel::message::{EventMessage, PlayerMessage, SynthMessage};
+use crate::channel::{Receiver, Sender};
+use crate::midi_dir::Midi;
 use crate::util::Either;
+use crate::{MIDI_NOTE_CAPACITY, error, info, warn};
 
 use embassy_time::Timer;
 

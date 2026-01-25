@@ -4,9 +4,11 @@ use futures_lite::FutureExt;
 
 use heapless::Vec;
 
-use crate::message::{EventMessage, TimerEvent, TimerMessage};
+use crate::channel::event::TimerEvent;
+use crate::channel::message::{EventMessage, TimerMessage};
+use crate::channel::{Mutex, Receiver, Sender};
 use crate::util::Either;
-use crate::{Mutex, Receiver, Sender, error, info};
+use crate::{error, info};
 
 pub static TIMERS: Mutex<Timers<64>> = Mutex::new(Timers { timers: Vec::new() });
 
