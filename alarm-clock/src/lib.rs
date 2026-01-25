@@ -175,10 +175,7 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	let sensor_publisher = SENSOR_CHANNEL.publisher().unwrap();
 
 	loop {
-		info!(
-			"Entering state {:?}",
-			defmt::Debug2Format(&state_transition)
-		);
+		info!("Entering state {:?}", &state_transition);
 
 		let state: ConcreteState = match state_transition {
 			StateTransition::Clock => {

@@ -28,7 +28,7 @@ pub struct Alphanum {
 	ascii_uppercase: bool,
 }
 
-#[derive(Clone, Copy, Debug, Format)]
+#[derive(Clone, Copy, Format)]
 #[allow(dead_code)]
 pub enum BlinkRate {
 	Off,
@@ -37,7 +37,7 @@ pub enum BlinkRate {
 	TwoHz,
 }
 
-#[derive(BitOr, Clone, Copy, Debug, Default, Format)]
+#[derive(BitOr, Clone, Copy, Default, Format)]
 pub struct Char(u16);
 
 pub const DOT: Char = char_to_alphanum('.');

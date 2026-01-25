@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 dir-static-macro = { path = "../dir-static-macro/" }
+defmt = "1.0"

@@ -128,10 +128,11 @@ pub async fn midi_player(
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, defmt::Format)]
 pub struct OrderedEvent<'a> {
 	ticks: u32,
 	track: usize,
+	#[defmt(Debug2Format)]
 	kind: TrackEventKind<'a>,
 }
 

@@ -43,7 +43,7 @@ where
 	}
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub enum Either<T, U> {
 	First(T),
 	Second(U),

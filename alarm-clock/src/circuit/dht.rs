@@ -63,7 +63,7 @@ impl Dht11 {
 	}
 }
 
-#[derive(Copy, Clone, Debug, Format)]
+#[derive(Copy, Clone, Format)]
 pub struct Dht11Reading {
 	pub humidity: u8,
 	pub temperature: u8,

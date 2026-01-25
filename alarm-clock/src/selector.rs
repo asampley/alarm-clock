@@ -1,3 +1,5 @@
+use defmt::Format;
+
 use core::cmp::min;
 
 pub trait Selector<T> {
@@ -9,7 +11,7 @@ pub trait Selector<T> {
 	fn len(&self) -> usize;
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub struct LinearSelector<'a, T> {
 	list: &'a [T],
 	curr: usize,
@@ -54,13 +56,13 @@ impl<T> Selector<T> for LinearSelector<'_, T> {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 enum Bound {
 	Single(usize),
 	Range(usize, usize),
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub struct BinarySelector<'a, T> {
 	list: &'a [T],
 	bound: Bound,
@@ -128,7 +130,7 @@ impl<T> Selector<T> for BinarySelector<'_, T> {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub enum ExponentialSelector {
 	Increasing { value: usize },
 	Tuning { value: usize, digit: u8 },

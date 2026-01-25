@@ -40,13 +40,18 @@ impl From<TimerEvent> for EventMessage {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub enum SynthMessage {
-	Midi { channel: u4, message: MidiMessage },
+	Midi {
+		#[defmt(Debug2Format)]
+		channel: u4,
+		#[defmt(Debug2Format)]
+		message: MidiMessage
+	},
 	Clear,
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub enum PlayerMessage {
 	Loop(Midi),
 	Play(Midi),
@@ -59,7 +64,7 @@ pub enum TimerMessage {
 	Remove(Instant),
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub enum AlphanumMessage {
 	Static(Calf<'static, String<4>>),
 	StaticRendered([Char; 4]),

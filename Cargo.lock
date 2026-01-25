@@ -334,6 +334,7 @@ dependencies = [
 name = "dir-static"
 version = "0.1.0"
 dependencies = [
+ "defmt 1.0.1",
  "dir-static-macro",
 ]
 
