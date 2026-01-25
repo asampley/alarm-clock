@@ -29,6 +29,7 @@
           buildInputs = with pkgsBuildHost; [
             espup
             just
+            rust-analyzer
             rustup
             probe-rs-tools
           ];
