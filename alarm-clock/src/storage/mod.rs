@@ -1,13 +1,16 @@
 mod hal;
 
-use bincode::{config::{Configuration, Fixint, Limit, LittleEndian}, Decode, Encode};
+use bincode::{
+	Decode, Encode,
+	config::{Configuration, Fixint, Limit, LittleEndian},
+};
 use defmt::{Debug2Format, Format};
 use hal::STORAGE;
 
 use embedded_storage::{ReadStorage, Storage};
 use thiserror::Error;
 
-use crate::{error, info, RwLock, RwLockReadGuard};
+use crate::{RwLock, RwLockReadGuard, error, info};
 
 const SETTINGS_MAX_SIZE: usize = 1024;
 
@@ -62,7 +65,10 @@ fn settings_address(storage: &impl Storage) -> u32 {
 	if core::mem::size_of::<u32>() >= core::mem::size_of::<usize>() {
 		(storage.capacity() - SETTINGS_MAX_SIZE) as u32
 	} else {
-		core::cmp::min(u32::MAX as usize - SETTINGS_MAX_SIZE, storage.capacity() - SETTINGS_MAX_SIZE) as u32
+		core::cmp::min(
+			u32::MAX as usize - SETTINGS_MAX_SIZE,
+			storage.capacity() - SETTINGS_MAX_SIZE,
+		) as u32
 	}
 }
 
@@ -74,11 +80,8 @@ pub async fn save_settings() -> Result<(), SaveError> {
 
 		info!("Saving settings {:?}", *set);
 
-		bincode::encode_into_slice(
-			&*set,
-			&mut buffer,
-			BincodeConfig::default()
-		).map_err(SaveError::Encode)
+		bincode::encode_into_slice(&*set, &mut buffer, BincodeConfig::default())
+			.map_err(SaveError::Encode)
 	}?;
 
 	{
@@ -86,7 +89,9 @@ pub async fn save_settings() -> Result<(), SaveError> {
 
 		let address = settings_address(&*storage);
 
-		storage.write(address, &buffer[..written]).map_err(SaveError::Storage)?;
+		storage
+			.write(address, &buffer[..written])
+			.map_err(SaveError::Storage)?;
 
 		info!("Saved settings to 0x{:x}", address);
 	}
@@ -102,7 +107,9 @@ pub async fn load_settings() -> Result<(), LoadError> {
 
 		let address = settings_address(&*storage);
 
-		storage.read(address, &mut buffer).map_err(LoadError::Storage)?;
+		storage
+			.read(address, &mut buffer)
+			.map_err(LoadError::Storage)?;
 
 		info!("Loading settings from 0x{:x}", address);
 	}

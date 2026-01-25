@@ -4,8 +4,8 @@ use defmt::Format;
 use embassy_time::{Duration, Instant};
 use heapless::index_map::FnvIndexMap;
 use midly::{
-	num::{u4, u7},
 	MidiMessage,
+	num::{u4, u7},
 };
 use serde::Deserialize;
 
@@ -115,8 +115,8 @@ impl<const NOTES: usize> Synth<NOTES> {
 	}
 
 	fn add_note(&mut self, sound_key: SoundKey, vel: u7) -> Result<(), ()> {
-		let on_period_ticks =
-			self.config.max_note_half_delay_us as f64 * vel.as_int() as f64 / u7::max_value().as_int() as f64;
+		let on_period_ticks = self.config.max_note_half_delay_us as f64 * vel.as_int() as f64
+			/ u7::max_value().as_int() as f64;
 
 		let instrument = self.instruments[usize::from(sound_key.channel.as_int())];
 
@@ -125,7 +125,8 @@ impl<const NOTES: usize> Synth<NOTES> {
 			period: Duration::from_micros((1_000_000.0 / frequency(sound_key.key)) as u64),
 			amplitude: Amplitude::Decay {
 				on_period_ticks,
-				sustain_transition: on_period_ticks * self.config.instrument_config(instrument).sustain_ratio,
+				sustain_transition: on_period_ticks
+					* self.config.instrument_config(instrument).sustain_ratio,
 			},
 		};
 
@@ -174,7 +175,7 @@ impl<const NOTES: usize> Synth<NOTES> {
 
 		let on_period = min(
 			Duration::from_micros(self.config.max_note_half_delay_us),
-			Duration::from_ticks(max(0, on_period as u64))
+			Duration::from_ticks(max(0, on_period as u64)),
 		);
 
 		self.notes.retain(|_, (sound, _)| !sound.amplitude.done());
@@ -185,8 +186,6 @@ impl<const NOTES: usize> Synth<NOTES> {
 		}
 	}
 }
-
-
 
 #[derive(Copy, Clone, Eq, Hash, PartialEq)]
 struct SoundKey {
@@ -225,7 +224,9 @@ enum Amplitude {
 impl Amplitude {
 	const fn on_period_ticks(&self) -> f64 {
 		match self {
-			Self::Decay { on_period_ticks, .. } => *on_period_ticks,
+			Self::Decay {
+				on_period_ticks, ..
+			} => *on_period_ticks,
 			Self::Sustain { on_period_ticks } => *on_period_ticks,
 			Self::Release { on_period_ticks } => *on_period_ticks,
 		}

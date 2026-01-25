@@ -1,10 +1,10 @@
 use core::pin::pin;
 
 use crate::midi_dir::Midi;
-use crate::{error, info, warn, Receiver, Sender, MIDI_NOTE_CAPACITY};
+use crate::{MIDI_NOTE_CAPACITY, Receiver, Sender, error, info, warn};
 use embassy_time::{Duration, Instant};
-use futures_lite::{stream, FutureExt, Stream, StreamExt};
-use heapless::{binary_heap::Min, BinaryHeap, Vec};
+use futures_lite::{FutureExt, Stream, StreamExt, stream};
+use heapless::{BinaryHeap, Vec, binary_heap::Min};
 
 use crate::message::{EventMessage, PlayerMessage, SongEvent, SynthMessage};
 use crate::util::Either;
@@ -112,7 +112,9 @@ pub async fn midi_player(
 						res.unwrap_or_else(|| state.next())
 					}
 					Format::Sequential => {
-						error!("Honestly, you're better off converting this to Single Track or splitting it into multiple files");
+						error!(
+							"Honestly, you're better off converting this to Single Track or splitting it into multiple files"
+						);
 
 						State::Stopped
 					}

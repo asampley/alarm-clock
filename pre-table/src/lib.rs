@@ -23,23 +23,36 @@ fn f64_table(
 	};
 
 	let Type::Array(ref array_type) = *ty else {
-		return syn::Error::new_spanned(ty, "Type must be an array").into_compile_error().into();
+		return syn::Error::new_spanned(ty, "Type must be an array")
+			.into_compile_error()
+			.into();
 	};
 
-	let Expr::Lit(ExprLit { lit: Lit::Int(ref size), .. }) = array_type.len else {
-		return syn::Error::new_spanned(&array_type.len, "Size must be an integer literal").into_compile_error().into();
+	let Expr::Lit(ExprLit {
+		lit: Lit::Int(ref size),
+		..
+	}) = array_type.len
+	else {
+		return syn::Error::new_spanned(&array_type.len, "Size must be an integer literal")
+			.into_compile_error()
+			.into();
 	};
 
 	let size = match size.base10_parse() {
 		Ok(v) => v,
-		Err(e) => return syn::Error::new_spanned(&array_type.len, format!("Failed to parse usize: {e}")).into_compile_error().into(),
+		Err(e) => {
+			return syn::Error::new_spanned(&array_type.len, format!("Failed to parse usize: {e}"))
+				.into_compile_error()
+				.into();
+		}
 	};
 
 	let vals: Vec<f64> = (0..size).map(|i| f(i, size)).collect();
 
 	quote! {
 		#(#attrs) * #vis #static_token #mutability #ident #colon_token #ty = [ #(#vals),* ] #semi_token
-	}.into()
+	}
+	.into()
 }
 
 #[proc_macro_attribute]
@@ -48,7 +61,7 @@ pub fn sin_table(
 	items: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
 	f64_table(
-		|i, size| i as f64 / size  as f64 * core::f64::consts::TAU,
+		|i, size| i as f64 / size as f64 * core::f64::consts::TAU,
 		items,
 	)
 }

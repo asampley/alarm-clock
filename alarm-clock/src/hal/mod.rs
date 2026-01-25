@@ -1,11 +1,7 @@
-use crate::{Devices, Error};
-use crate::tweaks::Config;
-use crate::circuit::{
-	button::Button,
-	buzzer::Buzzer,
-	dht::Dht11,
-};
+use crate::circuit::{button::Button, buzzer::Buzzer, dht::Dht11};
 use crate::message::{ButtonDirection, ButtonFunction};
+use crate::tweaks::Config;
+use crate::{Devices, Error};
 
 use embassy_time::Duration;
 
@@ -14,10 +10,7 @@ pub use xtensa::*;
 
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
-	#[cfg(not(any(
-		feature = "esp32s2",
-		feature = "esp32s3",
-	)))]
+	#[cfg(not(any(feature = "esp32s2", feature = "esp32s3",)))]
 	compile_error!("Must enable one of the esp features on xtensa hardware");
 
 	// import alone enables backtrace
@@ -29,8 +22,8 @@ mod xtensa {
 	pub fn setup_hardware(config: &Config) -> Result<Devices, Error> {
 		use esp_hal::gpio::Pin;
 
-		let p = esp_hal::init(esp_hal::Config::default()
-			.with_cpu_clock(esp_hal::clock::CpuClock::max())
+		let p = esp_hal::init(
+			esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()),
 		);
 
 		esp_rtos::start(esp_hal::timer::timg::TimerGroup::new(p.TIMG0).timer0);
@@ -63,6 +56,11 @@ mod xtensa {
 		// create temp/humid sensor driver
 		let humid_temp = Dht11::from(p.GPIO13.degrade());
 
-		Ok(Devices { buzzer, buttons, humid_temp, i2c })
+		Ok(Devices {
+			buzzer,
+			buttons,
+			humid_temp,
+			i2c,
+		})
 	}
 }

@@ -1,6 +1,9 @@
 use core::fmt::Debug;
 use core::ops::Deref;
 
+use defmt::Format;
+
+#[derive(Format)]
 pub enum Calf<'a, T: Deref> {
 	Borrowed(&'a <T as Deref>::Target),
 	Owned(T),

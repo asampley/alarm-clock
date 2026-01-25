@@ -1,4 +1,4 @@
-use embassy_time::{Duration, Instant, TimeoutError, WithTimeout, TICK_HZ};
+use embassy_time::{Duration, Instant, TICK_HZ, TimeoutError, WithTimeout};
 use heapless::String;
 
 use crate::Watch;

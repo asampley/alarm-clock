@@ -48,7 +48,11 @@ impl Dht11 {
 
 		let checksum = bytes[4];
 
-		if bytes[0..4].iter().fold(0_u8, |v, next| v.wrapping_add(*next)) != checksum {
+		if bytes[0..4]
+			.iter()
+			.fold(0_u8, |v, next| v.wrapping_add(*next))
+			!= checksum
+		{
 			warn!("Checksum didn't match");
 		}
 
@@ -89,7 +93,6 @@ impl Dht {
 	}
 
 	fn start_signal(&mut self) -> Result<(), Error> {
-
 		self.pin.set_low()?;
 		embassy_time::block_for(START_SIGNAL_DURATION);
 		self.pin.set_high()?;

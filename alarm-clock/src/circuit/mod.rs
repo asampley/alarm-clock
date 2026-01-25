@@ -1,4 +1,5 @@
 pub mod alphanum;
+pub mod bmp;
 pub mod button;
 pub mod buzzer;
 pub mod dht;

@@ -64,7 +64,7 @@ fn test_alphanum() -> rppal::i2c::Result<()> {
 			break;
 		}
 
-		alphanum.display(&chars.try_into().unwrap())?;
+		alphanum.display_str(&chars.try_into().unwrap())?;
 		iter.next();
 
 		std::thread::sleep(time::Duration::from_millis(300));

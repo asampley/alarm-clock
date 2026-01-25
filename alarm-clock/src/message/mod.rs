@@ -1,15 +1,19 @@
 use defmt::Format;
-use embassy_time::Instant;
-use heapless::String;
-use midly::num::u4;
-use midly::MidiMessage;
 
-use crate::circuit::alphanum::BlinkRate;
+use embassy_time::Instant;
+
+use heapless::{String, Vec};
+
+use midly::MidiMessage;
+use midly::num::u4;
+
+use crate::circuit::alphanum::{BlinkRate, Char};
+use crate::circuit::bmp::BmpReading;
 use crate::circuit::dht::Dht11Reading;
 use crate::midi_dir::Midi;
 use crate::util::Calf;
 
-#[derive(Debug, Format)]
+#[derive(Format)]
 pub enum EventMessage {
 	Button(ButtonEvent),
 	Song(SongEvent),
@@ -18,9 +22,10 @@ pub enum EventMessage {
 	Alarm,
 }
 
-#[derive(Debug, Format)]
+#[derive(Format)]
 pub enum ButtonEvent {
 	Press(ButtonFunction),
+
 	Release(ButtonFunction),
 }
 
@@ -30,19 +35,19 @@ impl From<ButtonEvent> for EventMessage {
 	}
 }
 
-#[derive(Copy, Clone, Debug, Eq, Format, PartialEq)]
+#[derive(Copy, Clone, Eq, Format, PartialEq)]
 pub enum ButtonFunction {
 	Direction(ButtonDirection),
 	Select,
 }
 
-#[derive(Copy, Clone, Debug, Eq, Format, PartialEq)]
+#[derive(Copy, Clone, Eq, Format, PartialEq)]
 pub enum ButtonDirection {
 	Prev,
 	Next,
 }
 
-#[derive(Debug, Format)]
+#[derive(Format)]
 pub enum SongEvent {
 	Start(&'static str),
 	End(&'static str),
@@ -54,7 +59,7 @@ impl From<SongEvent> for EventMessage {
 	}
 }
 
-#[derive(Debug, Format)]
+#[derive(Format)]
 pub enum TimerEvent {
 	Start(Instant),
 	End,
@@ -66,10 +71,12 @@ impl From<TimerEvent> for EventMessage {
 	}
 }
 
-#[derive(Debug, Format)]
+#[derive(Format)]
 pub enum SensorEvent {
 	Dht(Dht11Reading),
 	DhtError,
+	Bmp(BmpReading),
+	BmpError,
 }
 
 #[derive(Debug)]
@@ -85,7 +92,7 @@ pub enum PlayerMessage {
 	Stop,
 }
 
-#[derive(Debug)]
+#[derive(Format)]
 pub enum TimerMessage {
 	Seconds(u64),
 	Remove(Instant),
@@ -94,12 +101,15 @@ pub enum TimerMessage {
 #[derive(Debug)]
 pub enum AlphanumMessage {
 	Static(Calf<'static, String<4>>),
+	StaticRendered([Char; 4]),
 	Loop(&'static str),
+	// arbitrary limit of 256
+	LoopRendered(Vec<Char, 256>),
 	Empty,
 	Blink(BlinkRate),
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Format)]
 pub enum SensorMessage {
 	Update,
 }

@@ -6,7 +6,7 @@ use heapless::Vec;
 
 use crate::message::{EventMessage, TimerEvent, TimerMessage};
 use crate::util::Either;
-use crate::{error, info, Mutex, Receiver, Sender};
+use crate::{Mutex, Receiver, Sender, error, info};
 
 pub static TIMERS: Mutex<Timers<64>> = Mutex::new(Timers { timers: Vec::new() });
 

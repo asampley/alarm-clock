@@ -4,8 +4,8 @@ use embedded_hal::digital::OutputPin;
 use crate::circuit::buzzer::Buzzer;
 use crate::message::SynthMessage;
 use crate::synth::Synth;
-use crate::{error, Receiver};
 use crate::{MIDI_NOTE_CAPACITY, SYNTH_NOTES};
+use crate::{Receiver, error};
 
 #[embassy_executor::task]
 pub async fn update_buzzer(

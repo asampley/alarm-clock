@@ -1,7 +1,11 @@
+use defmt::Format;
+
+use derive_more::BitOr;
+
 use embedded_hal::i2c::I2c as SyncI2c;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 
-use crate::tasks::i2c::{I2c, Error};
+use crate::tasks::i2c::{Error, I2c};
 
 #[allow(dead_code)]
 const HT16K33_BLINK_CMD: u8 = 0x80; //< I2C register for BLINK setting
@@ -20,10 +24,11 @@ const HT16K33_BLINK_HALFHZ: u8 = 3; //< I2C value for 0.5 Hz blink
 const HT16K33_CMD_BRIGHTNESS: u8 = 0xE0; //< I2C register for BRIGHTNESS setting
 
 pub struct Alphanum {
+	address: u8,
 	ascii_uppercase: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Format)]
 #[allow(dead_code)]
 pub enum BlinkRate {
 	Off,
@@ -32,14 +37,20 @@ pub enum BlinkRate {
 	TwoHz,
 }
 
+#[derive(BitOr, Clone, Copy, Debug, Default, Format)]
+pub struct Char(u16);
+
+pub const DOT: Char = char_to_alphanum('.');
+
 impl Alphanum {
-	pub fn new(i2c: &mut I2c) -> Result<Self, Error> {
-		let mut val = Self {
+	pub fn with_address(address: u8, i2c: &mut I2c) -> Result<Self, Error> {
+		let val = Self {
+			address,
 			ascii_uppercase: false,
 		};
 
 		// turn on oscillator
-		val.write_sync(i2c, &[0x21])?;
+		SyncI2c::write(i2c, val.address, &[0x21])?;
 
 		val.set_brightness_sync(i2c, 15)?;
 		val.blink_rate_sync(i2c, BlinkRate::Off)?;
@@ -47,15 +58,19 @@ impl Alphanum {
 		Ok(val)
 	}
 
-	fn write_sync(&self, i2c: &mut I2c, write: &[u8]) -> Result<(), Error> {
-		SyncI2c::write(i2c, 0x70, write)
+	pub fn new(i2c: &mut I2c) -> Result<Self, Error> {
+		Self::with_address(0x70, i2c)
 	}
 
 	pub fn set_brightness_sync(&self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
-		self.write_sync(i2c, &[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)])
+		SyncI2c::write(
+			i2c,
+			self.address,
+			&[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)],
+		)
 	}
 
-	pub fn blink_rate_sync(&mut self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
+	pub fn blink_rate_sync(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -63,19 +78,23 @@ impl Alphanum {
 			BlinkRate::HalfHz => HT16K33_BLINK_HALFHZ,
 		};
 
-		self.write_sync(i2c, &[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
+		SyncI2c::write(
+			i2c,
+			self.address,
+			&[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)],
+		)
 	}
 
-	async fn write(&mut self, i2c: &mut I2c, write: &[u8]) -> Result<(), Error> {
-		AsyncI2c::write(i2c, 0x70, write).await
+	pub async fn set_brightness(&self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
+		AsyncI2c::write(
+			i2c,
+			self.address,
+			&[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)],
+		)
+		.await
 	}
 
-	pub async fn set_brightness(&mut self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
-		self.write(i2c, &[HT16K33_CMD_BRIGHTNESS | core::cmp::min(brightness, 15)])
-			.await
-	}
-
-	pub async fn blink_rate(&mut self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
+	pub async fn blink_rate(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -83,37 +102,52 @@ impl Alphanum {
 			BlinkRate::HalfHz => HT16K33_BLINK_HALFHZ,
 		};
 
-		self.write(i2c, &[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)])
-			.await
+		AsyncI2c::write(
+			i2c,
+			self.address,
+			&[HT16K33_BLINK_CMD | HT16K33_BLINK_DISPLAYON | (blink_rate << 1)],
+		)
+		.await
 	}
 
 	pub fn ascii_uppercase(&mut self, ascii_uppercase: bool) {
 		self.ascii_uppercase = ascii_uppercase;
 	}
 
-	/// display up to 4 chars from `string`
-	pub async fn display(&mut self, i2c: &mut I2c, string: &str) -> Result<(), Error> {
+	/// display up to 4 rendered characters
+	pub async fn display(&self, i2c: &mut I2c, chars: &[Char; 4]) -> Result<(), Error> {
 		let mut bytes = [0_u8; 9];
+
+		for (i, c) in chars.into_iter().enumerate() {
+			let char_bytes = c.0.to_le_bytes();
+			bytes[i * 2 + 1] = char_bytes[0];
+			bytes[i * 2 + 2] = char_bytes[1];
+		}
+
+		AsyncI2c::write(i2c, self.address, &bytes).await
+	}
+
+	/// display up to 4 chars from `string`
+	pub async fn display_str(&self, i2c: &mut I2c, string: &str) -> Result<(), Error> {
+		let mut chars = [Char::default(); 4];
 
 		for (i, mut c) in string.chars().enumerate().take(4) {
 			if self.ascii_uppercase {
 				c = c.to_ascii_uppercase()
 			}
 
-			let char_bytes = char_to_alphanum(c).to_le_bytes();
-			bytes[i * 2 + 1] = char_bytes[0];
-			bytes[i * 2 + 2] = char_bytes[1];
+			chars[i] = char_to_alphanum(c);
 		}
 
-		self.write(i2c, &bytes).await
+		self.display(i2c, &chars).await
 	}
 }
 
-pub fn timer_with_hand_alphanum(hand: u8) -> u16 {
-	const CLOCK: u16 = char_to_alphanum('O');
+pub fn timer_with_hand_alphanum(hand: u8) -> Char {
+	const CLOCK: Char = char_to_alphanum('O');
 
 	CLOCK
-		| match hand {
+		| Char(match hand {
 			0 => 0b_0000_0010_0000_0000,
 			1 => 0b_0000_0100_0000_0000,
 			2 => 0b_0000_0000_1000_0000,
@@ -123,11 +157,26 @@ pub fn timer_with_hand_alphanum(hand: u8) -> u16 {
 			6 => 0b_0000_0000_0100_0000,
 			7 => 0b_0000_0001_0000_0000,
 			_ => 0,
-		}
+		})
 }
 
-const fn char_to_alphanum(c: char) -> u16 {
-	match c {
+pub const fn char_to_alphanum_with_dot(c: char) -> Char {
+	Char(char_to_alphanum(c).0 | char_to_alphanum('.').0)
+}
+
+pub const fn digit_to_alphanum(i: i64, digit: u32) -> Char {
+	let leading = i / 10_i64.pow(digit);
+
+	if leading == 0 {
+		char_to_alphanum(' ')
+	} else {
+		let digit = (leading % 10).abs() as u8;
+		char_to_alphanum((digit + 0x30) as char)
+	}
+}
+
+pub const fn char_to_alphanum(c: char) -> Char {
+	Char(match c {
 		' ' => 0b_0000_0000_0000_0000,
 		'!' => 0b_0000_0000_0000_0110,
 		'"' => 0b_0000_0010_0010_0000,
@@ -142,7 +191,7 @@ const fn char_to_alphanum(c: char) -> u16 {
 		'+' => 0b_0001_0010_1100_0000,
 		',' => 0b_0000_1000_0000_0000,
 		'-' => 0b_0000_0000_1100_0000,
-		'.' => 0b_0000_0000_0000_0000,
+		'.' => 0b_0100_0000_0000_0000,
 		'/' => 0b_0000_1100_0000_0000,
 		'0' => 0b_0000_1100_0011_1111,
 		'1' => 0b_0000_0000_0000_0110,
@@ -224,5 +273,5 @@ const fn char_to_alphanum(c: char) -> u16 {
 		'}' => 0b_0010_0100_1000_1001,
 		'~' => 0b_0000_0101_0010_0000,
 		_ => 0b_0011_1111_1111_1111,
-	}
+	})
 }

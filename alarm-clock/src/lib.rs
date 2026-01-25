@@ -20,20 +20,15 @@ mod hal;
 use thiserror::Error;
 
 pub mod circuit;
-use circuit::{
-	alphanum::Alphanum,
-	button::Button,
-	buzzer::Buzzer,
-	dht::Dht11,
-};
+use circuit::{alphanum::Alphanum, bmp::Bmp180, button::Button, buzzer::Buzzer, dht::Dht11};
 
 pub mod tweaks;
 use tweaks::Config;
 
 pub mod message;
+use message::ButtonFunction;
 use message::TimerMessage;
 use message::{AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, SynthMessage};
-use message::ButtonFunction;
 
 mod midi_dir;
 use midi_dir::MIDI_DIR;
@@ -54,11 +49,11 @@ use states::{
 
 mod tasks;
 use tasks::alarm::alarm_task;
-use tasks::i2c::{alphanum_task, I2c};
 use tasks::buzzer::update_buzzer;
+use tasks::dht::dht_task;
+use tasks::i2c::{I2c, i2c_task};
 use tasks::input::poll_input;
 use tasks::player::midi_player;
-use tasks::sensors::sensor_task;
 use tasks::timer::timer_task;
 
 mod time;
@@ -73,6 +68,8 @@ type Sender<T, const CAP: usize> =
 	embassy_sync::channel::Sender<'static, CriticalSectionRawMutex, T, CAP>;
 type Receiver<T, const CAP: usize> =
 	embassy_sync::channel::Receiver<'static, CriticalSectionRawMutex, T, CAP>;
+type PubSubChannel<T, const CAP: usize, const SUBS: usize, const PUBS: usize> =
+	embassy_sync::pubsub::PubSubChannel<CriticalSectionRawMutex, T, CAP, SUBS, PUBS>;
 type Mutex<T> = embassy_sync::mutex::Mutex<CriticalSectionRawMutex, T>;
 type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CriticalSectionRawMutex, T, CAP>;
 type RwLock<T> = embassy_sync::rwlock::RwLock<CriticalSectionRawMutex, T>;
@@ -92,7 +89,7 @@ static ALPHANUM_CHANNEL: Channel<AlphanumMessage, 1> = Channel::new();
 static EVENT_CHANNEL: Channel<EventMessage, 16> = Channel::new();
 static MIDI_NOTE_CHANNEL: Channel<SynthMessage, MIDI_NOTE_CAPACITY> = Channel::new();
 static PLAYER_CHANNEL: Channel<PlayerMessage, 1> = Channel::new();
-static SENSOR_CHANNEL: Channel<SensorMessage, 1> = Channel::new();
+static SENSOR_CHANNEL: PubSubChannel<SensorMessage, 1, 2, 2> = PubSubChannel::new();
 static TIMER_CHANNEL: Channel<TimerMessage, 1> = Channel::new();
 
 #[derive(Debug, Error)]
@@ -120,11 +117,21 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	let config = CONFIG.get();
 	let synth = Synth::new(config.synth_config.clone());
 
-	let Devices { buzzer, buttons, humid_temp, mut i2c } = hal::setup_hardware(config)?;
+	let Devices {
+		buzzer,
+		buttons,
+		humid_temp,
+		mut i2c,
+	} = hal::setup_hardware(config)?;
 
 	let mut alphanum = Alphanum::new(&mut i2c).map_err(Error::I2c)?;
-	alphanum.set_brightness(&mut i2c, config.brightness).await.map_err(Error::I2c)?;
+	alphanum
+		.set_brightness(&mut i2c, config.brightness)
+		.await
+		.map_err(Error::I2c)?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
+
+	let bmp = Bmp180::new(&mut i2c).map_err(Error::I2c)?;
 
 	// load settings
 	match load_settings().await {
@@ -147,19 +154,29 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 		EVENT_CHANNEL.sender(),
 	))?;
 
-	// start display task
-	spawner.spawn(alphanum_task(i2c, alphanum, ALPHANUM_CHANNEL.receiver()))?;
+	// start i2c task
+	spawner.spawn(i2c_task(
+		i2c,
+		alphanum,
+		bmp,
+		EVENT_CHANNEL.sender(),
+		ALPHANUM_CHANNEL.receiver(),
+		SENSOR_CHANNEL.dyn_subscriber().unwrap(),
+	))?;
 
 	// start alarm task
-	spawner.spawn(alarm_task(EVENT_CHANNEL.sender(), SENSOR_CHANNEL.sender()))?;
+	spawner.spawn(alarm_task(
+		EVENT_CHANNEL.sender(),
+		SENSOR_CHANNEL.dyn_publisher().unwrap(),
+	))?;
 
 	// start timer task
 	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
 
-	// start sensors task
-	spawner.spawn(sensor_task(
+	// start dht task
+	spawner.spawn(dht_task(
 		humid_temp,
-		SENSOR_CHANNEL.receiver(),
+		SENSOR_CHANNEL.dyn_subscriber().unwrap(),
 		EVENT_CHANNEL.sender(),
 	))?;
 
@@ -179,13 +196,12 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			}
 			StateTransition::MainMenu => StateMainMenu::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::ClockSet => StateClockSet::new(ALPHANUM_CHANNEL.sender()).into(),
-			StateTransition::Alarm => {
-				StateAlarm::new(
-					ALPHANUM_CHANNEL.sender(),
-					PLAYER_CHANNEL.sender(),
-					SENSOR_CHANNEL.sender(),
-				).into()
-			}
+			StateTransition::Alarm => StateAlarm::new(
+				ALPHANUM_CHANNEL.sender(),
+				PLAYER_CHANNEL.sender(),
+				SENSOR_CHANNEL.dyn_publisher().unwrap(),
+			)
+			.into(),
 			StateTransition::AlarmTime => StateAlarmTimeSet::new(ALPHANUM_CHANNEL.sender()).into(),
 			StateTransition::AlarmSong => {
 				StateAlarmSongSet::new(ALPHANUM_CHANNEL.sender(), PLAYER_CHANNEL.sender()).into()
@@ -208,9 +224,11 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 			StateTransition::TimerMenu(x) => {
 				StateTimerMenu::new(x, ALPHANUM_CHANNEL.sender(), TIMER_CHANNEL.sender()).into()
 			}
-			StateTransition::Sensors => {
-				StateSensors::new(ALPHANUM_CHANNEL.sender(), SENSOR_CHANNEL.sender()).into()
-			}
+			StateTransition::Sensors => StateSensors::new(
+				ALPHANUM_CHANNEL.sender(),
+				SENSOR_CHANNEL.dyn_publisher().unwrap(),
+			)
+			.into(),
 		};
 
 		state_transition = process_state(state, &event_receiver).await;
@@ -221,8 +239,10 @@ async fn process_state(
 	mut state: impl State,
 	event_receiver: &Receiver<EventMessage, 16>,
 ) -> StateTransition {
+	info!("Intializing state");
 	state.init().await;
 
+	info!("Entering state event loop");
 	let state_transition = loop {
 		let msg = event_receiver
 			.receive()
@@ -236,6 +256,7 @@ async fn process_state(
 		}
 	};
 
+	info!("Finishing state");
 	state.finish().await;
 
 	state_transition
