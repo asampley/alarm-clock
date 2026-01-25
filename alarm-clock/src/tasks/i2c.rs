@@ -55,16 +55,12 @@ pub async fn i2c_task(
 		let alphanum_receiver_future =
 			async { Event::AlphanumMessage(alphanum_receiver.receive().await) };
 		let alphanum_scroll_future = async {
-			match text_mode {
-				TextMode::Static => core::future::pending().await,
-				TextMode::Iter(_) | TextMode::IterRendered(_) => {
+			match scroll_time {
+				None => core::future::pending().await,
+				Some(ref mut time) => {
 					let delay = Duration::from_millis(CONFIG.get().scroll_delay_ms);
-					let time = scroll_time.get_or_insert(Instant::now() + delay);
-
 					Timer::at(*time).await;
-
 					*time += delay;
-
 					Event::AlphanumScroll
 				}
 			}
@@ -75,51 +71,58 @@ pub async fn i2c_task(
 			.or(sensor_receiver_future)
 			.await
 		{
-			Event::AlphanumMessage(msg) => match msg {
-				AlphanumMessage::Static(chars) => {
-					let _ = alphanum
-						.display_str(&mut i2c, &chars)
-						.await
-						.inspect_err(|e| error!("{:?}", e));
-					text_mode = TextMode::Static;
+			Event::AlphanumMessage(msg) => {
+				match msg {
+					AlphanumMessage::Static(chars) => {
+						let _ = alphanum
+							.display_str(&mut i2c, &chars)
+							.await
+							.inspect_err(|e| error!("{:?}", e));
+						text_mode = TextMode::Static;
+					}
+					AlphanumMessage::StaticRendered(chars) => {
+						let _ = alphanum
+							.display(&mut i2c, &chars)
+							.await
+							.inspect_err(|e| error!("{:?}", e));
+						text_mode = TextMode::Static;
+					}
+					AlphanumMessage::Loop(t) => {
+						text_str = t;
+						text_mode =
+							TextMode::Iter(BLANKS.chars().chain(text_str.chars()).cycle().skip(2));
+					}
+					AlphanumMessage::LoopRendered(t) => {
+						text_rendered = t;
+						text_mode = TextMode::IterRendered(
+							BLANKS_RENDERED
+								.iter()
+								.chain(text_rendered.iter())
+								.cycle()
+								.skip(2)
+								.cloned(),
+						);
+					}
+					AlphanumMessage::Empty => {
+						let _ = alphanum
+							.display_str(&mut i2c, &BLANKS)
+							.await
+							.inspect_err(|e| error!("{:?}", e));
+						text_mode = TextMode::Static;
+					}
+					AlphanumMessage::Blink(blink_rate) => {
+						let _ = alphanum
+							.blink_rate(&mut i2c, blink_rate)
+							.await
+							.inspect_err(|e| error!("{:?}", e));
+					}
 				}
-				AlphanumMessage::StaticRendered(chars) => {
-					let _ = alphanum
-						.display(&mut i2c, &chars)
-						.await
-						.inspect_err(|e| error!("{:?}", e));
-					text_mode = TextMode::Static;
-				}
-				AlphanumMessage::Loop(t) => {
-					text_str = t;
-					text_mode =
-						TextMode::Iter(BLANKS.chars().chain(text_str.chars()).cycle().skip(2));
-				}
-				AlphanumMessage::LoopRendered(t) => {
-					text_rendered = t;
-					text_mode = TextMode::IterRendered(
-						BLANKS_RENDERED
-							.iter()
-							.chain(text_rendered.iter())
-							.cycle()
-							.skip(2)
-							.cloned(),
-					);
-				}
-				AlphanumMessage::Empty => {
-					let _ = alphanum
-						.display_str(&mut i2c, &BLANKS)
-						.await
-						.inspect_err(|e| error!("{:?}", e));
-					text_mode = TextMode::Static;
-				}
-				AlphanumMessage::Blink(blink_rate) => {
-					let _ = alphanum
-						.blink_rate(&mut i2c, blink_rate)
-						.await
-						.inspect_err(|e| error!("{:?}", e));
-				}
-			},
+
+				scroll_time = match text_mode {
+					TextMode::Static => None,
+					TextMode::Iter(_) | TextMode::IterRendered(_) => Some(Instant::now()),
+				};
+			}
 			Event::AlphanumScroll => match text_mode {
 				TextMode::Static => (),
 				TextMode::Iter(ref mut iter) => {
