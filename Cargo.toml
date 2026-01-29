@@ -1,6 +1,7 @@
 [workspace]
 members = [
 	"alarm-clock",
+	"alarm-clock-hal",
 	"pre-table",
 	"dir-static",
 	"dir-static-macro",

@@ -5,11 +5,11 @@ use futures_lite::{FutureExt, Stream, StreamExt, stream};
 use heapless::{BinaryHeap, Vec, binary_heap::Min};
 
 use crate::channel::event::SongEvent;
-use crate::channel::message::{EventMessage, PlayerMessage, SynthMessage};
-use crate::channel::{Receiver, Sender};
+use crate::channel::message::{PlayerMessage, SynthMessage};
+use crate::channel::{EventSender, PlayerReceiver, MidiNoteSender};
 use crate::midi_dir::Midi;
 use crate::util::Either;
-use crate::{MIDI_NOTE_CAPACITY, error, info, warn};
+use crate::{error, info, warn};
 
 use embassy_time::Timer;
 
@@ -36,9 +36,9 @@ impl State {
 
 #[embassy_executor::task]
 pub async fn midi_player(
-	player_receiver: Receiver<PlayerMessage, 1>,
-	note_sender: Sender<SynthMessage, MIDI_NOTE_CAPACITY>,
-	event_sender: Sender<EventMessage, 16>,
+	player_receiver: PlayerReceiver,
+	note_sender: MidiNoteSender,
+	event_sender: EventSender,
 ) {
 	let mut state = State::Stopped;
 

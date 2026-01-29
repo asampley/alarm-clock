@@ -14,23 +14,19 @@ const BIT_X_UP_MID: Duration =
 const BIT_TIMEOUT: Duration = Duration::from_micros(1000);
 const ACKNOWLEDGE_TIMEOUT: Duration = Duration::from_millis(10);
 
-/// Required to be concrete for embassy tasks
-pub type Pin = impl InputPin + OutputPin + ErrorType<Error: defmt::Format>;
-pub type Error = <Pin as ErrorType>::Error;
-
 #[derive(Format)]
-pub enum SyncError {
-	Pin(Error),
+pub enum SyncError<Pin: ErrorType> {
+	Pin(Pin::Error),
 	Timeout,
 }
 
-pub struct Dht {
+pub struct Dht<Pin> {
 	pin: Pin,
 }
 
-pub struct Dht11(Dht);
+pub struct Dht11<Pin>(Dht<Pin>);
 
-impl Dht11 {
+impl<Pin: InputPin + OutputPin> Dht11<Pin> {
 	/// expects an open drain pin
 	pub fn new(mut pin: Pin) -> Self {
 		pin.set_high().unwrap();
@@ -38,7 +34,7 @@ impl Dht11 {
 		Self(Dht { pin })
 	}
 
-	pub fn read(&mut self) -> Result<Dht11Reading, SyncError> {
+	pub fn read(&mut self) -> Result<Dht11Reading, SyncError<Pin>> {
 		Ok(self.0.read_bytes().map(Self::parse)?)
 	}
 
@@ -69,8 +65,8 @@ pub struct Dht11Reading {
 	pub temperature: u8,
 }
 
-impl Dht {
-	pub fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], SyncError> {
+impl<Pin: ErrorType + InputPin + OutputPin> Dht<Pin> {
+	pub fn read_bytes<const N: usize>(&mut self) -> Result<[u8; N], SyncError<Pin>> {
 		let mut output = [0; N];
 
 		debug!("start signal");
@@ -92,7 +88,7 @@ impl Dht {
 		Ok(output)
 	}
 
-	fn start_signal(&mut self) -> Result<(), Error> {
+	fn start_signal(&mut self) -> Result<(), Pin::Error> {
 		self.pin.set_low()?;
 		embassy_time::block_for(START_SIGNAL_DURATION);
 		self.pin.set_high()?;
@@ -102,7 +98,7 @@ impl Dht {
 		Ok(())
 	}
 
-	fn read_byte(&mut self) -> Result<u8, SyncError> {
+	fn read_byte(&mut self) -> Result<u8, SyncError<Pin>> {
 		let mut output = 0;
 
 		for bit in (0..8).rev() {
@@ -113,7 +109,7 @@ impl Dht {
 	}
 
 	// Assumes the pin is already low.
-	fn read_bit(&mut self) -> Result<bool, SyncError> {
+	fn read_bit(&mut self) -> Result<bool, SyncError<Pin>> {
 		let timeout = Instant::now() + BIT_TIMEOUT;
 
 		self.wait_for_high(timeout)?;
@@ -125,7 +121,7 @@ impl Dht {
 		Ok(Instant::now() - start > BIT_X_UP_MID)
 	}
 
-	fn timeout(timeout: Instant) -> Result<(), SyncError> {
+	fn timeout(timeout: Instant) -> Result<(), SyncError<Pin>> {
 		if Instant::now() > timeout {
 			Err(SyncError::Timeout)
 		} else {
@@ -133,7 +129,7 @@ impl Dht {
 		}
 	}
 
-	fn wait_for_high(&mut self, timeout: Instant) -> Result<(), SyncError> {
+	fn wait_for_high(&mut self, timeout: Instant) -> Result<(), SyncError<Pin>> {
 		while self.pin.is_low().map_err(SyncError::Pin)? {
 			Self::timeout(timeout)?
 		}
@@ -141,7 +137,7 @@ impl Dht {
 		Ok(())
 	}
 
-	fn wait_for_low(&mut self, timeout: Instant) -> Result<(), SyncError> {
+	fn wait_for_low(&mut self, timeout: Instant) -> Result<(), SyncError<Pin>> {
 		while self.pin.is_high().map_err(SyncError::Pin)? {
 			Self::timeout(timeout)?
 		}

@@ -5,8 +5,6 @@ use derive_more::BitOr;
 use embedded_hal::i2c::I2c as SyncI2c;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 
-use crate::tasks::i2c::{Error, I2c};
-
 #[allow(dead_code)]
 const HT16K33_BLINK_CMD: u8 = 0x80; //< I2C register for BLINK setting
 #[allow(dead_code)]
@@ -43,7 +41,7 @@ pub struct Char(u16);
 pub const DOT: Char = char_to_alphanum('.');
 
 impl Alphanum {
-	pub fn with_address(address: u8, i2c: &mut I2c) -> Result<Self, Error> {
+	pub fn with_address<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Self, I2c::Error> {
 		let val = Self {
 			address,
 			ascii_uppercase: false,
@@ -58,11 +56,11 @@ impl Alphanum {
 		Ok(val)
 	}
 
-	pub fn new(i2c: &mut I2c) -> Result<Self, Error> {
+	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, I2c::Error> {
 		Self::with_address(0x70, i2c)
 	}
 
-	pub fn set_brightness_sync(&self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
+	pub fn set_brightness_sync<I2c: SyncI2c>(&self, i2c: &mut I2c, brightness: u8) -> Result<(), I2c::Error> {
 		SyncI2c::write(
 			i2c,
 			self.address,
@@ -70,7 +68,7 @@ impl Alphanum {
 		)
 	}
 
-	pub fn blink_rate_sync(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
+	pub fn blink_rate_sync<I2c: SyncI2c>(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), I2c::Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -85,7 +83,7 @@ impl Alphanum {
 		)
 	}
 
-	pub async fn set_brightness(&self, i2c: &mut I2c, brightness: u8) -> Result<(), Error> {
+	pub async fn set_brightness<I2c: AsyncI2c>(&self, i2c: &mut I2c, brightness: u8) -> Result<(), I2c::Error> {
 		AsyncI2c::write(
 			i2c,
 			self.address,
@@ -94,7 +92,7 @@ impl Alphanum {
 		.await
 	}
 
-	pub async fn blink_rate(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), Error> {
+	pub async fn blink_rate<I2c: AsyncI2c>(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), I2c::Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -115,7 +113,7 @@ impl Alphanum {
 	}
 
 	/// display up to 4 rendered characters
-	pub async fn display(&self, i2c: &mut I2c, chars: &[Char; 4]) -> Result<(), Error> {
+	pub async fn display<I2c: AsyncI2c>(&self, i2c: &mut I2c, chars: &[Char; 4]) -> Result<(), I2c::Error> {
 		let mut bytes = [0_u8; 9];
 
 		for (i, c) in chars.into_iter().enumerate() {
@@ -128,7 +126,7 @@ impl Alphanum {
 	}
 
 	/// display up to 4 chars from `string`
-	pub async fn display_str(&self, i2c: &mut I2c, string: &str) -> Result<(), Error> {
+	pub async fn display_str<I2c: AsyncI2c>(&self, i2c: &mut I2c, string: &str) -> Result<(), I2c::Error> {
 		let mut chars = [Char::default(); 4];
 
 		for (i, mut c) in string.chars().enumerate().take(4) {

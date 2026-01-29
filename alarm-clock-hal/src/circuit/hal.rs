@@ -6,7 +6,6 @@ mod xtensa {
 	use esp_hal::gpio::{AnyPin, DriveMode, Input, InputConfig, Level, Output, OutputConfig, Pull};
 
 	impl From<AnyPin<'static>> for Dht11 {
-		#[define_opaque(crate::circuit::dht::Pin)]
 		fn from(pin: AnyPin<'static>) -> Self {
 			Self::new(
 				Output::new(
@@ -22,14 +21,12 @@ mod xtensa {
 	}
 
 	impl From<AnyPin<'static>> for Buzzer {
-		#[define_opaque(crate::circuit::buzzer::Pin)]
 		fn from(pin: AnyPin<'static>) -> Self {
 			Self::new(Output::new(pin, Level::Low, OutputConfig::default()))
 		}
 	}
 
 	impl From<(AnyPin<'static>, Duration)> for Button {
-		#[define_opaque(crate::circuit::button::Pin)]
 		fn from((pin, bounce_time): (AnyPin<'static>, Duration)) -> Self {
 			Self::new(
 				Input::new(pin, InputConfig::default().with_pull(Pull::Up)),

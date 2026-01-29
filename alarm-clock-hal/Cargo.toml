@@ -1,0 +1,36 @@
+[package]
+name = "alarm-clock-hal"
+version = "0.3.0"
+authors = ["Alex Sampley"]
+edition = "2024"
+
+[features]
+default = ["synth-pulse", "synth-sample"]
+
+synth-pulse = []
+synth-sample = []
+
+[dependencies]
+dir-static = { path = "../dir-static" }
+pre-table = { path = "../pre-table" }
+
+bincode = { version = "2.0", default-features = false, features = ["derive"] }
+
+embassy-executor = { version = "0.9.0", features = ["defmt", "nightly"] }
+embassy-sync = { version = "0.7.0", features = ["defmt"] }
+embassy-time = { version = "0.5.0", features = ["defmt", "generic-queue-8"] }
+
+embedded-hal = { version = "1.0", features = ["defmt-03"] }
+embedded-hal-async = { version = "1.0", features = ["defmt-03"] }
+
+defmt = "1.0.1"
+defmt-rtt = "1.0.0"
+derive_more = { version = "2.0", default-features = false, features = ["full"] }
+enum_dispatch = "0.3.13"
+futures-lite = { version = "2.6", default-features = false }
+heapless = { version = "0.9.0", default-features = false, features = ["serde", "defmt"] }
+libm = { version = "0.2.11" }
+midly = { version = "0.5.3", default-features = false }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde-json-core = "0.6.0"
+thiserror = { version = "2.0.9", default-features = false }

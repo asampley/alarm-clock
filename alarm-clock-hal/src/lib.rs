@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
-#![feature(type_alias_impl_trait)]
 #![feature(never_type)]
 
 use defmt::Debug2Format;
@@ -12,9 +11,12 @@ use embassy_executor::{SpawnError, Spawner};
 
 use embassy_sync::lazy_lock::LazyLock;
 
+use embassy_time::Duration;
+use embedded_hal::digital::{InputPin, OutputPin};
+use embedded_hal::i2c::{self, I2c as SyncI2c};
+use embedded_hal_async::digital::Wait;
+use embedded_hal_async::i2c::I2c as AsyncI2c;
 use futures_lite::FutureExt;
-
-mod hal;
 
 use thiserror::Error;
 
@@ -36,9 +38,9 @@ use midi_dir::MIDI_DIR;
 
 mod selector;
 
-mod storage;
+pub mod storage;
 
-mod synth;
+pub mod synth;
 use synth::Synth;
 
 mod states;
@@ -48,19 +50,19 @@ use states::{
 	StateTimerRunning, StateTimerSet, StateTransition,
 };
 
-mod tasks;
+pub mod tasks;
 use tasks::alarm::alarm_task;
-use tasks::buzzer::update_buzzer;
-use tasks::dht::dht_task;
-use tasks::i2c::{I2c, i2c_task};
-use tasks::input::poll_input;
 use tasks::player::midi_player;
 use tasks::timer::timer_task;
 
 mod time;
 use time::ClockTime;
 
-use crate::storage::load_settings;
+use crate::storage::{LOAD_HAL, SAVE_HAL, load_settings}; 
+use crate::tasks::buzzer::UpdateBuzzerTask;
+use crate::tasks::dht::DhtTask;
+use crate::tasks::i2c::I2cTask;
+use crate::tasks::input::PollInputTask;
 
 mod util;
 
@@ -72,7 +74,7 @@ static CONFIG: LazyLock<Config> = LazyLock::new(|| {
 });
 
 const MIDI_NOTE_CAPACITY: usize = 64;
-const SYNTH_NOTES: usize = 32;
+pub const SYNTH_NOTES: usize = 32;
 
 static ALPHANUM_CHANNEL: AlphanumChannel = Channel::new();
 static EVENT_CHANNEL: EventChannel = Channel::new();
@@ -82,58 +84,83 @@ static SENSOR_CHANNEL: SensorPubSub = PubSubChannel::new();
 static TIMER_CHANNEL: TimerChannel = Channel::new();
 
 #[derive(Debug, Error)]
-pub enum Error {
+pub enum Error<I2c> {
 	#[error("failed to spawn task")]
 	SpawnError(SpawnError),
 	#[error("pin communication failed")]
-	I2c(tasks::i2c::Error),
+	I2c(I2c),
 }
 
-impl From<SpawnError> for Error {
+impl<I2c> From<SpawnError> for Error<I2c> {
 	fn from(value: SpawnError) -> Self {
 		Self::SpawnError(value)
 	}
 }
 
-struct Devices {
-	buzzer: Buzzer,
-	buttons: [(ButtonFunction, Button); 3],
-	humid_temp: Dht11,
-	i2c: I2c,
+pub struct StartupConfig<P1, P2, P3, P4, T1, T2, T3, T4> where
+	P1: OutputPin,
+	P2: InputPin + Wait,
+	P3: InputPin + OutputPin,
+	P4: AsyncI2c + SyncI2c,
+{
+	pub buzzer_pin: P1,
+	pub button_pins: [(ButtonFunction, P2); 3],
+	pub dht_pin: P3,
+	pub i2c: P4,
+	pub update_buzzer: UpdateBuzzerTask<T1, P1>,
+	pub poll_input: PollInputTask<T2, P2>,
+	pub dht_task: DhtTask<T3, P3>,
+	pub i2c_task: I2cTask<T4, P4>,
+	pub save_settings: Option<fn(bytes: &[u8]) -> Result<(), ()>>,
+	pub load_settings: Option<fn(bytes: &mut [u8]) -> Result<(), ()>>,
 }
 
-pub async fn startup(spawner: Spawner) -> Result<(), Error> {
+pub async fn startup<P1, P2, P3, P4, T1, T2, T3, T4>(
+	mut startup_config: StartupConfig<P1, P2, P3, P4, T1, T2, T3, T4>,
+	spawner: Spawner
+) -> Result<(), Error<P4::Error>> where 
+	P1: OutputPin,
+	P2: InputPin + Wait,
+	P3: InputPin + OutputPin,
+	P4: AsyncI2c + SyncI2c + i2c::ErrorType,
+{
 	let config = CONFIG.get();
+
+	// set save and load operations if set
+	startup_config.save_settings.map(|v| SAVE_HAL.get_or_init(|| v));
+	startup_config.load_settings.map(|v| LOAD_HAL.get_or_init(|| v));
+
 	let synth = Synth::new(config.synth_config.clone());
 
-	let Devices {
-		buzzer,
-		buttons,
-		humid_temp,
-		mut i2c,
-	} = hal::setup_hardware(config)?;
-
-	let mut alphanum = Alphanum::new(&mut i2c).map_err(Error::I2c)?;
+	let mut alphanum = Alphanum::new(&mut startup_config.i2c).map_err(Error::I2c)?;
 	alphanum
-		.set_brightness(&mut i2c, config.brightness)
+		.set_brightness(&mut startup_config.i2c, config.brightness)
 		.await
 		.map_err(Error::I2c)?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
-	let bmp = Bmp180::new(&mut i2c).map_err(Error::I2c)?;
+	let bmp = Bmp180::new(&mut startup_config.i2c).map_err(Error::I2c)?;
+
+	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
+	let buttons = startup_config.button_pins
+		.map(|(f, p)| (f, Button::new(p, button_bounce_time)));
+
+	let buzzer = Buzzer::new(startup_config.buzzer_pin);
+
+	let dht = Dht11::new(startup_config.dht_pin);
 
 	// load settings
 	match load_settings().await {
 		Ok(()) => (),
 		Err(e) => error!("Failed to load settings: {:?}", Debug2Format(&e)),
-	}
+	};
 
 	// start task to update buzzer
-	spawner.spawn(update_buzzer(MIDI_NOTE_CHANNEL.receiver(), buzzer, synth))?;
+	spawner.spawn((startup_config.update_buzzer)(MIDI_NOTE_CHANNEL.receiver(), buzzer, synth))?;
 
 	// start task to read poll button
 	for (function, button) in buttons {
-		spawner.spawn(poll_input(EVENT_CHANNEL.sender(), button, function))?;
+		spawner.spawn((startup_config.poll_input)(EVENT_CHANNEL.sender(), button, function))?;
 	}
 
 	// start playing midi file
@@ -144,8 +171,8 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	))?;
 
 	// start i2c task
-	spawner.spawn(i2c_task(
-		i2c,
+	spawner.spawn((startup_config.i2c_task)(
+		startup_config.i2c,
 		alphanum,
 		bmp,
 		EVENT_CHANNEL.sender(),
@@ -163,8 +190,8 @@ pub async fn startup(spawner: Spawner) -> Result<(), Error> {
 	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
 
 	// start dht task
-	spawner.spawn(dht_task(
-		humid_temp,
+	spawner.spawn((startup_config.dht_task)(
+		dht,
 		SENSOR_CHANNEL.subscriber().unwrap(),
 		EVENT_CHANNEL.sender(),
 	))?;

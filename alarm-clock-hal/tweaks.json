@@ -7,6 +7,7 @@
 
 	"synth_config": {
 		"max_note_half_delay_us": 30,
+		"updater": "Pulse",
 		"pluck": {
 			"sustain_ratio": 0.0,
 			"decay_constant": 4.0,

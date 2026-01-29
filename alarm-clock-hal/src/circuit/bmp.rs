@@ -7,7 +7,6 @@ use embedded_hal_async::i2c::I2c as AsyncI2c;
 
 use crate::circuit::alphanum::{Char, DOT, char_to_alphanum, digit_to_alphanum};
 use crate::info;
-use crate::tasks::i2c::{Error, I2c};
 
 const CONTROL_ADDRESS: u8 = 0xF4;
 const CONTROL_TEMPERATURE: u8 = 0x2E;
@@ -92,18 +91,18 @@ struct Calibration {
 }
 
 impl Bmp180 {
-	pub fn with_address(address: u8, i2c: &mut I2c) -> Result<Self, Error> {
+	pub fn with_address<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Self, I2c::Error> {
 		Ok(Self {
 			address,
 			cal: Self::read_calibration_data_sync(address, i2c)?,
 		})
 	}
 
-	pub fn new(i2c: &mut I2c) -> Result<Self, Error> {
+	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, I2c::Error> {
 		Self::with_address(0x77, i2c)
 	}
 
-	fn read_calibration_data_sync(address: u8, i2c: &mut I2c) -> Result<Calibration, Error> {
+	fn read_calibration_data_sync<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Calibration, I2c::Error> {
 		let mut buffer = [0; 22];
 		SyncI2c::write_read(i2c, address, &[0xAA], &mut buffer)?;
 
@@ -126,12 +125,12 @@ impl Bmp180 {
 		Ok(calibration)
 	}
 
-	async fn write_control(&self, i2c: &mut I2c, value: u8) -> Result<(), Error> {
+	async fn write_control<I2c: AsyncI2c>(&self, i2c: &mut I2c, value: u8) -> Result<(), I2c::Error> {
 		AsyncI2c::write(i2c, self.address, &[CONTROL_ADDRESS, value]).await
 	}
 
 	/// Pressure calculation depends on temperature, just read them both
-	pub async fn read(&self, i2c: &mut I2c, oss: u8) -> Result<BmpReading, Error> {
+	pub async fn read<I2c: AsyncI2c>(&self, i2c: &mut I2c, oss: u8) -> Result<BmpReading, I2c::Error> {
 		let oss = core::cmp::max(3, oss) as usize;
 
 		self.write_control(i2c, CONTROL_TEMPERATURE).await?;

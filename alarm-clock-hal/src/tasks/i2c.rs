@@ -1,7 +1,8 @@
+use embassy_executor::SpawnToken;
 use embassy_time::{Duration, Instant, Timer};
 
-use embedded_hal::i2c::I2c as SyncI2c;
-use embedded_hal_async::i2c::{ErrorType, I2c as AsyncI2c};
+use embedded_hal::i2c::{I2c as SyncI2c, ErrorType};
+use embedded_hal_async::i2c::I2c as AsyncI2c;
 
 use futures_lite::FutureExt;
 
@@ -13,10 +14,6 @@ use crate::channel::{AlphanumReceiver, EventSender, SensorSubscriber};
 use crate::circuit::alphanum::{Alphanum, Char, char_to_alphanum};
 use crate::circuit::bmp::Bmp180;
 use crate::{CONFIG, error, info};
-
-/// Required to be concrete for embassy tasks
-pub type I2c = impl SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>;
-pub type Error = <I2c as ErrorType>::Error;
 
 const BLANKS: &str = "    ";
 static BLANKS_RENDERED: [Char; 4] = [char_to_alphanum(' '); 4];
@@ -33,9 +30,10 @@ enum Event {
 	SensorMessage(SensorMessage),
 }
 
-#[embassy_executor::task]
-pub async fn i2c_task(
-	mut i2c: I2c,
+pub type I2cTask<S, I> = fn(I, Alphanum, Bmp180, EventSender, AlphanumReceiver, SensorSubscriber<'static>) -> SpawnToken<S>;
+
+pub async fn i2c_task<I: SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>>(
+	mut i2c: I,
 	alphanum: Alphanum,
 	bmp: Bmp180,
 	event_sender: EventSender,

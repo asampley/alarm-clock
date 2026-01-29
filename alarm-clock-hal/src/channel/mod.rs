@@ -26,6 +26,7 @@ pub type Mutex<T> = embassy_sync::mutex::Mutex<CSRM, T>;
 pub type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CSRM, T, CAP>;
 pub type RwLock<T> = embassy_sync::rwlock::RwLock<CSRM, T>;
 pub type RwLockReadGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, CSRM, T>;
+pub type RwLockWriteGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, CSRM, T>;
 
 pub type AlphanumChannel = Channel<AlphanumMessage, ALPHANUM_CAP>;
 pub type AlphanumReceiver = Receiver<AlphanumMessage, ALPHANUM_CAP>;

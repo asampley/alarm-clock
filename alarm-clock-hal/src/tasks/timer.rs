@@ -5,8 +5,8 @@ use futures_lite::FutureExt;
 use heapless::Vec;
 
 use crate::channel::event::TimerEvent;
-use crate::channel::message::{EventMessage, TimerMessage};
-use crate::channel::{Mutex, Receiver, Sender};
+use crate::channel::message::TimerMessage;
+use crate::channel::{EventSender, Mutex, TimerReceiver};
 use crate::util::Either;
 use crate::{error, info};
 
@@ -58,8 +58,8 @@ impl<const SIZE: usize> Timers<SIZE> {
 
 #[embassy_executor::task]
 pub async fn timer_task(
-	timer_receiver: Receiver<TimerMessage, 1>,
-	event_sender: Sender<EventMessage, 16>,
+	timer_receiver: TimerReceiver,
+	event_sender: EventSender,
 ) {
 	let mut last_timer = Instant::from_ticks(0);
 
@@ -90,7 +90,7 @@ pub async fn timer_task(
 	}
 }
 
-async fn process_message(message: TimerMessage, event_sender: &Sender<EventMessage, 16>) {
+async fn process_message(message: TimerMessage, event_sender: &EventSender) {
 	match message {
 		TimerMessage::Seconds(seconds) => {
 			info!("Started timer for {} seconds", seconds);
