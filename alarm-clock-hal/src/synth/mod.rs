@@ -12,7 +12,6 @@ use midly::{
 	MidiMessage,
 	num::{u4, u7},
 };
-use serde::Deserialize;
 
 /// Chosen because humans should be able to hear at most a 19kHz, or 1/52us
 ///
@@ -47,7 +46,7 @@ pub enum DynSynthUpdater {
 	Sample(sample::SampleUpdater),
 }
 
-#[derive(Clone, Copy, Deserialize, Format)]
+#[derive(Clone, Copy, Format)]
 pub enum Updater {
 	#[cfg(feature = "synth-pulse")]
 	Pulse,
@@ -72,19 +71,19 @@ pub trait SynthUpdater {
 	) -> Pulse;
 }
 
-#[derive(Clone, Deserialize, Format)]
+#[derive(Clone, Format)]
 pub struct SynthConfig {
-	max_note_half_delay_us: u64,
-	updater: Updater,
-	pluck: InstrumentConfig,
-	hold: InstrumentConfig,
+	pub max_note_half_delay_us: u64,
+	pub updater: Updater,
+	pub pluck: InstrumentConfig,
+	pub hold: InstrumentConfig,
 }
 
-#[derive(Clone, Deserialize, Format)]
+#[derive(Clone, Format)]
 pub struct InstrumentConfig {
-	sustain_ratio: f64,
-	decay_constant: f64,
-	release_decay_constant: f64,
+	pub sustain_ratio: f64,
+	pub decay_constant: f64,
+	pub release_decay_constant: f64,
 }
 
 #[derive(Copy, Clone, Eq, Hash, PartialEq)]

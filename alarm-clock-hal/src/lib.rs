@@ -9,8 +9,6 @@ pub use defmt::{debug, error, info, trace, warn};
 
 use embassy_executor::{SpawnError, Spawner};
 
-use embassy_sync::lazy_lock::LazyLock;
-
 use embassy_time::Duration;
 use embedded_hal::digital::{InputPin, OutputPin};
 use embedded_hal::i2c::{self, I2c as SyncI2c};
@@ -66,12 +64,7 @@ use crate::tasks::input::PollInputTask;
 
 mod util;
 
-// an instant that marks midnight
-static CONFIG: LazyLock<Config> = LazyLock::new(|| {
-	serde_json_core::from_str(include_str!("../tweaks.json"))
-		.unwrap()
-		.0
-});
+pub static CONFIG: Config = include!("../tweaks.rse");
 
 const MIDI_NOTE_CAPACITY: usize = 64;
 pub const SYNTH_NOTES: usize = 32;
@@ -124,7 +117,7 @@ pub async fn startup<P1, P2, P3, P4, T1, T2, T3, T4>(
 	P3: InputPin + OutputPin,
 	P4: AsyncI2c + SyncI2c + i2c::ErrorType,
 {
-	let config = CONFIG.get();
+	let config = &CONFIG;
 
 	// set save and load operations if set
 	startup_config.save_settings.map(|v| SAVE_HAL.get_or_init(|| v));

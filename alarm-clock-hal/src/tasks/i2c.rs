@@ -55,7 +55,7 @@ pub async fn i2c_task<I: SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>>(
 			match scroll_time {
 				None => core::future::pending().await,
 				Some(ref mut time) => {
-					let delay = Duration::from_millis(CONFIG.get().scroll_delay_ms);
+					let delay = Duration::from_millis(CONFIG.scroll_delay_ms);
 					Timer::at(*time).await;
 					*time += delay;
 					Event::AlphanumScroll

@@ -1,8 +1,5 @@
-use serde::Deserialize;
-
 use crate::synth::SynthConfig;
 
-#[derive(Deserialize)]
 pub struct Config {
 	pub button_bounce_ms: u64,
 
