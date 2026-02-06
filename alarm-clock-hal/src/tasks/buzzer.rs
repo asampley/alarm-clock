@@ -48,9 +48,11 @@ async fn drive_buzzer<Pin: OutputPin, const N: usize>(
 	time_range: (Instant, Instant),
 ) -> Result<(), Pin::Error> {
 	let pulse = synth.update(time_range);
-	buzzer.set_high()?;
-	embassy_time::block_for(pulse.on);
-	buzzer.set_low()?;
+	if pulse.on.as_ticks() > 0 {
+		buzzer.set_high()?;
+		embassy_time::block_for(pulse.on);
+		buzzer.set_low()?;
+	}
 	Timer::after(pulse.off).await;
 
 	Ok(())
