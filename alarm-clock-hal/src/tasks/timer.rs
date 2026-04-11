@@ -54,13 +54,14 @@ impl<const SIZE: usize> Timers<SIZE> {
 	pub fn len(&self) -> usize {
 		self.timers.len()
 	}
+
+	pub fn is_empty(&self) -> bool {
+		self.timers.is_empty()
+	}
 }
 
 #[embassy_executor::task]
-pub async fn timer_task(
-	timer_receiver: TimerReceiver,
-	event_sender: EventSender,
-) {
+pub async fn timer_task(timer_receiver: TimerReceiver, event_sender: EventSender) {
 	let mut last_timer = Instant::from_ticks(0);
 
 	loop {
@@ -72,7 +73,10 @@ pub async fn timer_task(
 				None => process_message(timer_receiver.receive().await, &event_sender).await,
 				Some(_) => {
 					match async { Either::First(timer_receiver.receive().await) }
-						.or(async { Either::Second(Timer::at(timer_time).await) })
+						.or(async {
+							Timer::at(timer_time).await;
+							Either::Second(())
+						})
 						.await
 					{
 						Either::First(message) => process_message(message, &event_sender).await,

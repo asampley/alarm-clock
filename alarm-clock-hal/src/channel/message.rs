@@ -46,7 +46,7 @@ pub enum SynthMessage {
 		#[defmt(Debug2Format)]
 		channel: u4,
 		#[defmt(Debug2Format)]
-		message: MidiMessage
+		message: MidiMessage,
 	},
 	Clear,
 }

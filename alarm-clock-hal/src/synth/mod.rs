@@ -67,7 +67,7 @@ pub trait SynthUpdater {
 		&mut self,
 		synth_config: &SynthConfig,
 		time_range: (Instant, Instant),
-		sounds: impl Iterator<Item=&'a mut Sound>,
+		sounds: impl Iterator<Item = &'a mut Sound>,
 	) -> Pulse;
 }
 
@@ -203,7 +203,11 @@ impl<const NOTES: usize> Synth<NOTES> {
 	}
 
 	pub fn update(&mut self, time_range: (Instant, Instant)) -> Pulse {
-		let pulse = self.config.updater.updater().update(&self.config, time_range, self.notes.values_mut());
+		let pulse =
+			self.config
+				.updater
+				.updater()
+				.update(&self.config, time_range, self.notes.values_mut());
 
 		self.notes.retain(|_, sound| !sound.amplitude.done());
 
@@ -233,9 +237,7 @@ impl Amplitude {
 
 	fn release(&mut self) {
 		match self {
-			Self::Decay {
-				amplitude, ..
-			} => {
+			Self::Decay { amplitude, .. } => {
 				*self = Self::Release {
 					amplitude: *amplitude,
 				}
@@ -271,8 +273,7 @@ impl Amplitude {
 			Amplitude::Release { amplitude } => {
 				// exponential shifted down to intersect the x-axis
 				*amplitude += 1.0;
-				*amplitude *=
-					libm::exp2(-(elapsed.as_ticks() as f64) * release_decay_constant);
+				*amplitude *= libm::exp2(-(elapsed.as_ticks() as f64) * release_decay_constant);
 				*amplitude -= 1.0;
 			}
 		}

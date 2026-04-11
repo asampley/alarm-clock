@@ -7,8 +7,11 @@ use crate::channel::{EventSender, SensorSubscriber};
 use crate::circuit::dht::Dht11;
 use crate::{error, info};
 
-pub type DhtTask<S, P>
-	= fn(dht: Dht11<P>, sensor_subscriber: SensorSubscriber<'static>, event_sender: EventSender) -> SpawnToken<S>;
+pub type DhtTask<S, P> = fn(
+	dht: Dht11<P>,
+	sensor_subscriber: SensorSubscriber<'static>,
+	event_sender: EventSender,
+) -> SpawnToken<S>;
 
 pub async fn dht_task<Pin: InputPin + OutputPin + ErrorType<Error: defmt::Format>>(
 	mut humid_temp: Dht11<Pin>,

@@ -50,6 +50,7 @@ fn f64_table(
 	let vals: Vec<f64> = (0..size).map(|i| f(i, size)).collect();
 
 	quote! {
+		#[allow(approx_constant)]
 		#(#attrs) * #vis #static_token #mutability #ident #colon_token #ty = [ #(#vals),* ] #semi_token
 	}
 	.into()

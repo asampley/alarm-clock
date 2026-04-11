@@ -77,7 +77,7 @@ impl<'a, T> BinarySelector<'a, T> {
 	fn curr_i(&self) -> usize {
 		match self.bound {
 			Bound::Single(i) => i,
-			Bound::Range(i, j) => i + (j - i + 1) / 2,
+			Bound::Range(i, j) => i + (j - i).div_ceil(2),
 		}
 	}
 }

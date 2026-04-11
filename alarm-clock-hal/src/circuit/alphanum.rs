@@ -60,7 +60,11 @@ impl Alphanum {
 		Self::with_address(0x70, i2c)
 	}
 
-	pub fn set_brightness_sync<I2c: SyncI2c>(&self, i2c: &mut I2c, brightness: u8) -> Result<(), I2c::Error> {
+	pub fn set_brightness_sync<I2c: SyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		brightness: u8,
+	) -> Result<(), I2c::Error> {
 		SyncI2c::write(
 			i2c,
 			self.address,
@@ -68,7 +72,11 @@ impl Alphanum {
 		)
 	}
 
-	pub fn blink_rate_sync<I2c: SyncI2c>(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), I2c::Error> {
+	pub fn blink_rate_sync<I2c: SyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		blink_rate: BlinkRate,
+	) -> Result<(), I2c::Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -83,7 +91,11 @@ impl Alphanum {
 		)
 	}
 
-	pub async fn set_brightness<I2c: AsyncI2c>(&self, i2c: &mut I2c, brightness: u8) -> Result<(), I2c::Error> {
+	pub async fn set_brightness<I2c: AsyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		brightness: u8,
+	) -> Result<(), I2c::Error> {
 		AsyncI2c::write(
 			i2c,
 			self.address,
@@ -92,7 +104,11 @@ impl Alphanum {
 		.await
 	}
 
-	pub async fn blink_rate<I2c: AsyncI2c>(&self, i2c: &mut I2c, blink_rate: BlinkRate) -> Result<(), I2c::Error> {
+	pub async fn blink_rate<I2c: AsyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		blink_rate: BlinkRate,
+	) -> Result<(), I2c::Error> {
 		let blink_rate = match blink_rate {
 			BlinkRate::Off => HT16K33_BLINK_OFF,
 			BlinkRate::TwoHz => HT16K33_BLINK_2HZ,
@@ -113,10 +129,14 @@ impl Alphanum {
 	}
 
 	/// display up to 4 rendered characters
-	pub async fn display<I2c: AsyncI2c>(&self, i2c: &mut I2c, chars: &[Char; 4]) -> Result<(), I2c::Error> {
+	pub async fn display<I2c: AsyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		chars: &[Char; 4],
+	) -> Result<(), I2c::Error> {
 		let mut bytes = [0_u8; 9];
 
-		for (i, c) in chars.into_iter().enumerate() {
+		for (i, c) in chars.iter().enumerate() {
 			let char_bytes = c.0.to_le_bytes();
 			bytes[i * 2 + 1] = char_bytes[0];
 			bytes[i * 2 + 2] = char_bytes[1];
@@ -126,7 +146,11 @@ impl Alphanum {
 	}
 
 	/// display up to 4 chars from `string`
-	pub async fn display_str<I2c: AsyncI2c>(&self, i2c: &mut I2c, string: &str) -> Result<(), I2c::Error> {
+	pub async fn display_str<I2c: AsyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		string: &str,
+	) -> Result<(), I2c::Error> {
 		let mut chars = [Char::default(); 4];
 
 		for (i, mut c) in string.chars().enumerate().take(4) {
@@ -168,7 +192,7 @@ pub const fn digit_to_alphanum(i: i64, digit: u32) -> Char {
 	if leading == 0 {
 		char_to_alphanum(' ')
 	} else {
-		let digit = (leading % 10).abs() as u8;
+		let digit = (leading % 10).unsigned_abs() as u8;
 		char_to_alphanum((digit + 0x30) as char)
 	}
 }

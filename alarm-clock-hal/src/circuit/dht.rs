@@ -35,7 +35,7 @@ impl<Pin: InputPin + OutputPin> Dht11<Pin> {
 	}
 
 	pub fn read(&mut self) -> Result<Dht11Reading, SyncError<Pin>> {
-		Ok(self.0.read_bytes().map(Self::parse)?)
+		self.0.read_bytes().map(Self::parse)
 	}
 
 	fn parse(bytes: [u8; 5]) -> Dht11Reading {

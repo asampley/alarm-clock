@@ -7,13 +7,16 @@ use embassy_sync::once_lock::OnceLock;
 
 use thiserror::Error;
 
-use crate::channel::{RwLock, RwLockReadGuard};
+use crate::{
+	LoadSettings, SaveSettings,
+	channel::{RwLock, RwLockReadGuard},
+};
 use crate::{error, info, warn};
 
 pub const SETTINGS_MAX_SIZE: usize = 1024;
 
-pub static SAVE_HAL: OnceLock<fn(&[u8]) -> Result<(), ()>> = OnceLock::new();
-pub static LOAD_HAL: OnceLock<fn(&mut [u8]) -> Result<(), ()>> = OnceLock::new();
+pub static SAVE_HAL: OnceLock<SaveSettings> = OnceLock::new();
+pub static LOAD_HAL: OnceLock<LoadSettings> = OnceLock::new();
 
 type BincodeConfig = Configuration<LittleEndian, Fixint, Limit<SETTINGS_MAX_SIZE>>;
 
@@ -64,7 +67,7 @@ pub enum LoadError {
 pub async fn save_settings() -> Result<(), SaveError> {
 	let Some(save) = SAVE_HAL.try_get() else {
 		warn!("No hal save implementation set");
-		return Ok(())
+		return Ok(());
 	};
 
 	let mut buffer = [0; SETTINGS_MAX_SIZE];
@@ -86,7 +89,7 @@ pub async fn save_settings() -> Result<(), SaveError> {
 pub async fn load_settings() -> Result<(), LoadError> {
 	let Some(load) = LOAD_HAL.try_get() else {
 		warn!("No hal save implementation set");
-		return Ok(())
+		return Ok(());
 	};
 
 	let mut buffer = [0; SETTINGS_MAX_SIZE];

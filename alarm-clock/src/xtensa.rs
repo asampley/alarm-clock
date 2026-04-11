@@ -1,5 +1,7 @@
 #![cfg(target_arch = "xtensa")]
 
+use alarm_clock_hal::channel::event::{ButtonDirection, ButtonFunction};
+use alarm_clock_hal::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
 use alarm_clock_hal::circuit::alphanum::Alphanum;
 use alarm_clock_hal::circuit::bmp::Bmp180;
 use alarm_clock_hal::circuit::button::Button;
@@ -9,8 +11,6 @@ pub use alarm_clock_hal::startup;
 use alarm_clock_hal::storage::SETTINGS_MAX_SIZE;
 use alarm_clock_hal::synth::Synth;
 use alarm_clock_hal::{Error, SYNTH_NOTES, StartupConfig};
-use alarm_clock_hal::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
-use alarm_clock_hal::channel::event::{ButtonDirection, ButtonFunction};
 use alarm_clock_hal::{error, info};
 
 use embassy_executor::Spawner;
@@ -52,9 +52,8 @@ type I2cPinError = <I2cPin as i2c::ErrorType>::Error;
 pub async fn run(spawner: Spawner) -> Result<(), Error<I2cPinError>> {
 	use esp_hal::gpio::Pin;
 
-	let p = esp_hal::init(
-		esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()),
-	);
+	let p =
+		esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
 
 	esp_rtos::start(esp_hal::timer::timg::TimerGroup::new(p.TIMG0).timer0);
 
@@ -73,7 +72,7 @@ pub async fn run(spawner: Spawner) -> Result<(), Error<I2cPinError>> {
 			p.GPIO2.degrade(),
 		),
 	]
-		.map(|(f, p)| (f, Input::new(p, InputConfig::default().with_pull(Pull::Up))));
+	.map(|(f, p)| (f, Input::new(p, InputConfig::default().with_pull(Pull::Up))));
 
 	let i2c = esp_hal::i2c::master::I2c::new(p.I2C0, Default::default())
 		.unwrap()
@@ -86,31 +85,43 @@ pub async fn run(spawner: Spawner) -> Result<(), Error<I2cPinError>> {
 		Level::High,
 		OutputConfig::default()
 			.with_drive_mode(DriveMode::OpenDrain)
-			.with_pull(Pull::Up)
-		)
-		.into_flex();
+			.with_pull(Pull::Up),
+	)
+	.into_flex();
 
-	startup(StartupConfig {
-		buzzer_pin,
-		button_pins,
-		dht_pin,
-		i2c,
-		update_buzzer,
-		poll_input,
-		dht_task,
-		i2c_task,
-		save_settings: Some(save_settings),
-		load_settings: Some(load_settings),
-	}, spawner).await
+	startup(
+		StartupConfig {
+			buzzer_pin,
+			button_pins,
+			dht_pin,
+			i2c,
+			update_buzzer,
+			poll_input,
+			dht_task,
+			i2c_task,
+			save_settings: Some(save_settings),
+			load_settings: Some(load_settings),
+		},
+		spawner,
+	)
+	.await
 }
 
 #[embassy_executor::task]
-async fn update_buzzer(note_receiver: MidiNoteReceiver, buzzer: Buzzer<BuzzerPin>, synth: Synth<SYNTH_NOTES>) {
+async fn update_buzzer(
+	note_receiver: MidiNoteReceiver,
+	buzzer: Buzzer<BuzzerPin>,
+	synth: Synth<SYNTH_NOTES>,
+) {
 	alarm_clock_hal::tasks::buzzer::update_buzzer(note_receiver, buzzer, synth).await
 }
 
-#[embassy_executor::task(pool_size=3)]
-async fn poll_input(event_sender: EventSender, button: Button<ButtonPin>, function: ButtonFunction) {
+#[embassy_executor::task(pool_size = 3)]
+async fn poll_input(
+	event_sender: EventSender,
+	button: Button<ButtonPin>,
+	function: ButtonFunction,
+) {
 	alarm_clock_hal::tasks::input::poll_input(event_sender, button, function).await
 }
 
@@ -123,7 +134,15 @@ async fn i2c_task(
 	alphanum_receiver: AlphanumReceiver,
 	sensor_subscriber: SensorSubscriber<'static>,
 ) {
-	alarm_clock_hal::tasks::i2c::i2c_task(i2c, alphanum, bmp, event_sender, alphanum_receiver, sensor_subscriber).await
+	alarm_clock_hal::tasks::i2c::i2c_task(
+		i2c,
+		alphanum,
+		bmp,
+		event_sender,
+		alphanum_receiver,
+		sensor_subscriber,
+	)
+	.await
 }
 
 #[embassy_executor::task]
@@ -178,4 +197,3 @@ fn load_settings(bytes: &mut [u8]) -> Result<(), ()> {
 		})
 	}
 }
-

@@ -56,7 +56,7 @@ use tasks::timer::timer_task;
 mod time;
 use time::ClockTime;
 
-use crate::storage::{LOAD_HAL, SAVE_HAL, load_settings}; 
+use crate::storage::{LOAD_HAL, SAVE_HAL, load_settings};
 use crate::tasks::buzzer::UpdateBuzzerTask;
 use crate::tasks::dht::DhtTask;
 use crate::tasks::i2c::I2cTask;
@@ -90,7 +90,11 @@ impl<I2c> From<SpawnError> for Error<I2c> {
 	}
 }
 
-pub struct StartupConfig<P1, P2, P3, P4, T1, T2, T3, T4> where
+pub type SaveSettings = fn(bytes: &[u8]) -> Result<(), ()>;
+pub type LoadSettings = fn(bytes: &mut [u8]) -> Result<(), ()>;
+
+pub struct StartupConfig<P1, P2, P3, P4, T1, T2, T3, T4>
+where
 	P1: OutputPin,
 	P2: InputPin + Wait,
 	P3: InputPin + OutputPin,
@@ -104,14 +108,15 @@ pub struct StartupConfig<P1, P2, P3, P4, T1, T2, T3, T4> where
 	pub poll_input: PollInputTask<T2, P2>,
 	pub dht_task: DhtTask<T3, P3>,
 	pub i2c_task: I2cTask<T4, P4>,
-	pub save_settings: Option<fn(bytes: &[u8]) -> Result<(), ()>>,
-	pub load_settings: Option<fn(bytes: &mut [u8]) -> Result<(), ()>>,
+	pub save_settings: Option<SaveSettings>,
+	pub load_settings: Option<LoadSettings>,
 }
 
 pub async fn startup<P1, P2, P3, P4, T1, T2, T3, T4>(
 	mut startup_config: StartupConfig<P1, P2, P3, P4, T1, T2, T3, T4>,
-	spawner: Spawner
-) -> Result<(), Error<P4::Error>> where 
+	spawner: Spawner,
+) -> Result<(), Error<P4::Error>>
+where
 	P1: OutputPin,
 	P2: InputPin + Wait,
 	P3: InputPin + OutputPin,
@@ -120,8 +125,12 @@ pub async fn startup<P1, P2, P3, P4, T1, T2, T3, T4>(
 	let config = &CONFIG;
 
 	// set save and load operations if set
-	startup_config.save_settings.map(|v| SAVE_HAL.get_or_init(|| v));
-	startup_config.load_settings.map(|v| LOAD_HAL.get_or_init(|| v));
+	startup_config
+		.save_settings
+		.map(|v| SAVE_HAL.get_or_init(|| v));
+	startup_config
+		.load_settings
+		.map(|v| LOAD_HAL.get_or_init(|| v));
 
 	let synth = Synth::new(config.synth_config.clone());
 
@@ -135,7 +144,8 @@ pub async fn startup<P1, P2, P3, P4, T1, T2, T3, T4>(
 	let bmp = Bmp180::new(&mut startup_config.i2c).map_err(Error::I2c)?;
 
 	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
-	let buttons = startup_config.button_pins
+	let buttons = startup_config
+		.button_pins
 		.map(|(f, p)| (f, Button::new(p, button_bounce_time)));
 
 	let buzzer = Buzzer::new(startup_config.buzzer_pin);
@@ -149,11 +159,19 @@ pub async fn startup<P1, P2, P3, P4, T1, T2, T3, T4>(
 	};
 
 	// start task to update buzzer
-	spawner.spawn((startup_config.update_buzzer)(MIDI_NOTE_CHANNEL.receiver(), buzzer, synth))?;
+	spawner.spawn((startup_config.update_buzzer)(
+		MIDI_NOTE_CHANNEL.receiver(),
+		buzzer,
+		synth,
+	))?;
 
 	// start task to read poll button
 	for (function, button) in buttons {
-		spawner.spawn((startup_config.poll_input)(EVENT_CHANNEL.sender(), button, function))?;
+		spawner.spawn((startup_config.poll_input)(
+			EVENT_CHANNEL.sender(),
+			button,
+			function,
+		))?;
 	}
 
 	// start playing midi file

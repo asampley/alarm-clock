@@ -28,7 +28,7 @@ impl<Pin: InputPin + Wait> Button<Pin> {
 
 			if self
 				.last_event
-				.map_or(true, |e| e + self.bounce_time <= Instant::now())
+				.is_none_or(|e| e + self.bounce_time <= Instant::now())
 			{
 				self.last_event = Some(Instant::now());
 

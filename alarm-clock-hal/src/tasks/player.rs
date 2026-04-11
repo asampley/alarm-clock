@@ -6,7 +6,7 @@ use heapless::{BinaryHeap, Vec, binary_heap::Min};
 
 use crate::channel::event::SongEvent;
 use crate::channel::message::{PlayerMessage, SynthMessage};
-use crate::channel::{EventSender, PlayerReceiver, MidiNoteSender};
+use crate::channel::{EventSender, MidiNoteSender, PlayerReceiver};
 use crate::midi_dir::Midi;
 use crate::util::Either;
 use crate::{error, info, warn};

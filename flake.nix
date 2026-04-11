@@ -34,17 +34,17 @@
             probe-rs-tools
           ];
 
-
           shellHook = ''
-            espup install
+            espup install --toolchain-version 1.92
             . ~/export-esp.sh
           '';
         };
     in
     {
-      formatter = genSystems (system: (pkgsFor system system).nixfmt-rfc-style);
+      formatter = genSystems (system: (pkgsFor system system).nixfmt-tree);
 
-      devShells = genSystems (system:
+      devShells = genSystems (
+        system:
         lib.mergeAttrsList (
           map (cross: {
             default = (pkgsFor system cross).callPackage shell { };

@@ -102,7 +102,10 @@ impl Bmp180 {
 		Self::with_address(0x77, i2c)
 	}
 
-	fn read_calibration_data_sync<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Calibration, I2c::Error> {
+	fn read_calibration_data_sync<I2c: SyncI2c>(
+		address: u8,
+		i2c: &mut I2c,
+	) -> Result<Calibration, I2c::Error> {
 		let mut buffer = [0; 22];
 		SyncI2c::write_read(i2c, address, &[0xAA], &mut buffer)?;
 
@@ -125,12 +128,20 @@ impl Bmp180 {
 		Ok(calibration)
 	}
 
-	async fn write_control<I2c: AsyncI2c>(&self, i2c: &mut I2c, value: u8) -> Result<(), I2c::Error> {
+	async fn write_control<I2c: AsyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		value: u8,
+	) -> Result<(), I2c::Error> {
 		AsyncI2c::write(i2c, self.address, &[CONTROL_ADDRESS, value]).await
 	}
 
 	/// Pressure calculation depends on temperature, just read them both
-	pub async fn read<I2c: AsyncI2c>(&self, i2c: &mut I2c, oss: u8) -> Result<BmpReading, I2c::Error> {
+	pub async fn read<I2c: AsyncI2c>(
+		&self,
+		i2c: &mut I2c,
+		oss: u8,
+	) -> Result<BmpReading, I2c::Error> {
 		let oss = core::cmp::max(3, oss) as usize;
 
 		self.write_control(i2c, CONTROL_TEMPERATURE).await?;

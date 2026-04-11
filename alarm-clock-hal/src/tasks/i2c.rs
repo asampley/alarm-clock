@@ -1,7 +1,7 @@
 use embassy_executor::SpawnToken;
 use embassy_time::{Duration, Instant, Timer};
 
-use embedded_hal::i2c::{I2c as SyncI2c, ErrorType};
+use embedded_hal::i2c::{ErrorType, I2c as SyncI2c};
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 
 use futures_lite::FutureExt;
@@ -30,7 +30,14 @@ enum Event {
 	SensorMessage(SensorMessage),
 }
 
-pub type I2cTask<S, I> = fn(I, Alphanum, Bmp180, EventSender, AlphanumReceiver, SensorSubscriber<'static>) -> SpawnToken<S>;
+pub type I2cTask<S, I> = fn(
+	I,
+	Alphanum,
+	Bmp180,
+	EventSender,
+	AlphanumReceiver,
+	SensorSubscriber<'static>,
+) -> SpawnToken<S>;
 
 pub async fn i2c_task<I: SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>>(
 	mut i2c: I,
@@ -102,7 +109,7 @@ pub async fn i2c_task<I: SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>>(
 					}
 					AlphanumMessage::Empty => {
 						let _ = alphanum
-							.display_str(&mut i2c, &BLANKS)
+							.display_str(&mut i2c, BLANKS)
 							.await
 							.inspect_err(|e| error!("{:?}", e));
 						text_mode = TextMode::Static;

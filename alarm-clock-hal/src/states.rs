@@ -891,18 +891,13 @@ impl State for StateTimerSet {
 	}
 }
 
-#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Default, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 enum SensorDisplay {
+	#[default]
 	Temperature = 0,
 	Humidity = 1,
 	Pressure = 2,
-}
-
-impl Default for SensorDisplay {
-	fn default() -> Self {
-		Self::Temperature
-	}
 }
 
 impl SensorDisplay {

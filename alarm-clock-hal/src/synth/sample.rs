@@ -14,7 +14,7 @@ impl SynthUpdater for SampleUpdater {
 		&mut self,
 		synth_config: &SynthConfig,
 		time_range: (Instant, Instant),
-		sounds: impl Iterator<Item=&'a mut Sound>
+		sounds: impl Iterator<Item = &'a mut Sound>,
 	) -> Pulse {
 		let mut on_period = 0.0;
 

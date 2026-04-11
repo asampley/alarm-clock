@@ -1,7 +1,7 @@
 pub mod event;
 pub mod message;
 
-type CSRM = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+type Csrm = embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 
 use message::*;
 
@@ -13,20 +13,20 @@ const SENSOR_SUBS: usize = 2;
 const SENSOR_PUBS: usize = 2;
 const TIMER_CAP: usize = 1;
 
-pub type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<CSRM, T, CAP>;
-pub type Sender<T, const CAP: usize> = embassy_sync::channel::Sender<'static, CSRM, T, CAP>;
-pub type Receiver<T, const CAP: usize> = embassy_sync::channel::Receiver<'static, CSRM, T, CAP>;
+pub type Channel<T, const CAP: usize> = embassy_sync::channel::Channel<Csrm, T, CAP>;
+pub type Sender<T, const CAP: usize> = embassy_sync::channel::Sender<'static, Csrm, T, CAP>;
+pub type Receiver<T, const CAP: usize> = embassy_sync::channel::Receiver<'static, Csrm, T, CAP>;
 pub type PubSubChannel<T, const CAP: usize, const SUBS: usize, const PUBS: usize> =
-	embassy_sync::pubsub::PubSubChannel<CSRM, T, CAP, SUBS, PUBS>;
+	embassy_sync::pubsub::PubSubChannel<Csrm, T, CAP, SUBS, PUBS>;
 pub type Subscriber<'a, T, const CAP: usize, const SUBS: usize, const PUBS: usize> =
-	embassy_sync::pubsub::Subscriber<'a, CSRM, T, CAP, SUBS, PUBS>;
+	embassy_sync::pubsub::Subscriber<'a, Csrm, T, CAP, SUBS, PUBS>;
 pub type Publisher<'a, T, const CAP: usize, const SUBS: usize, const PUBS: usize> =
-	embassy_sync::pubsub::Publisher<'a, CSRM, T, CAP, SUBS, PUBS>;
-pub type Mutex<T> = embassy_sync::mutex::Mutex<CSRM, T>;
-pub type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<CSRM, T, CAP>;
-pub type RwLock<T> = embassy_sync::rwlock::RwLock<CSRM, T>;
-pub type RwLockReadGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, CSRM, T>;
-pub type RwLockWriteGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, CSRM, T>;
+	embassy_sync::pubsub::Publisher<'a, Csrm, T, CAP, SUBS, PUBS>;
+pub type Mutex<T> = embassy_sync::mutex::Mutex<Csrm, T>;
+pub type Watch<T, const CAP: usize> = embassy_sync::watch::Watch<Csrm, T, CAP>;
+pub type RwLock<T> = embassy_sync::rwlock::RwLock<Csrm, T>;
+pub type RwLockReadGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, Csrm, T>;
+pub type RwLockWriteGuard<'a, T> = embassy_sync::rwlock::RwLockReadGuard<'a, Csrm, T>;
 
 pub type AlphanumChannel = Channel<AlphanumMessage, ALPHANUM_CAP>;
 pub type AlphanumReceiver = Receiver<AlphanumMessage, ALPHANUM_CAP>;
