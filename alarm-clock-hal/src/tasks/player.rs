@@ -69,7 +69,7 @@ pub async fn midi_player(
 								Err(e) => {
 									error!(
 										"Error while reading tracks: {:?}",
-										defmt::Debug2Format(&e)
+										defmt_or_log::Debug2Format(&e)
 									)
 								}
 								Ok(event_iter) => {
@@ -128,11 +128,12 @@ pub async fn midi_player(
 	}
 }
 
-#[derive(Debug, defmt::Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct OrderedEvent<'a> {
 	ticks: u32,
 	track: usize,
-	#[defmt(Debug2Format)]
+	#[cfg_attr(feature = "defmt", defmt(Debug2Format))]
 	kind: TrackEventKind<'a>,
 }
 
@@ -251,6 +252,6 @@ fn ticks_to_duration(ticks_per_beat: u16, tempo: u32, ticks: u32) -> Duration {
 fn warn_midly(e: &midly::Error) {
 	warn!(
 		"Error while reading midi file: {:?}",
-		defmt::Debug2Format(e)
+		defmt_or_log::Debug2Format(e)
 	)
 }

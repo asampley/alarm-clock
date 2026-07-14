@@ -1,9 +1,7 @@
 use core::fmt::Debug;
 use core::ops::Deref;
 
-use defmt::Format;
-
-#[derive(Format)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Calf<'a, T: Deref> {
 	Borrowed(&'a <T as Deref>::Target),
 	Owned(T),
@@ -43,8 +41,31 @@ where
 	}
 }
 
-#[derive(Format)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Either<T, U> {
 	First(T),
 	Second(U),
+}
+
+impl<T, U> Debug for Either<T, U>
+where
+	T: Debug,
+	U: Debug,
+{
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			Self::First(v) => {
+				write!(f, "First(")?;
+				v.fmt(f)?;
+				write!(f, ")")?;
+			}
+			Self::Second(v) => {
+				write!(f, "Second(")?;
+				v.fmt(f)?;
+				write!(f, ")")?;
+			}
+		}
+
+		Ok(())
+	}
 }

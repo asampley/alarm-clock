@@ -1,5 +1,3 @@
-#![cfg(target_arch = "xtensa")]
-
 use alarm_clock_hal::channel::event::{ButtonDirection, ButtonFunction};
 use alarm_clock_hal::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
 use alarm_clock_hal::circuit::alphanum::Alphanum;
@@ -11,7 +9,7 @@ pub use alarm_clock_hal::startup;
 use alarm_clock_hal::storage::SETTINGS_MAX_SIZE;
 use alarm_clock_hal::synth::Synth;
 use alarm_clock_hal::{Error, SYNTH_NOTES, StartupConfig};
-use alarm_clock_hal::{error, info};
+use defmt::{error, info};
 
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::{CriticalSectionMutex, Mutex};
@@ -21,6 +19,7 @@ use embedded_storage::{ReadStorage, Storage};
 use esp_hal::Async;
 use esp_hal::gpio::{DriveMode, Flex, Input, InputConfig, Level, Output, OutputConfig, Pull};
 use esp_hal::i2c::master::I2c;
+use esp_hal::interrupt::software::SoftwareInterruptControl;
 use esp_hal::peripherals::FLASH;
 
 // import alone enables backtrace
@@ -55,7 +54,10 @@ pub async fn run(spawner: Spawner) -> Result<(), Error<I2cPinError>> {
 	let p =
 		esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
 
-	esp_rtos::start(esp_hal::timer::timg::TimerGroup::new(p.TIMG0).timer0);
+	esp_rtos::start(
+		esp_hal::timer::timg::TimerGroup::new(p.TIMG0).timer0,
+		SoftwareInterruptControl::new(p.SW_INTERRUPT).software_interrupt0,
+	);
 
 	// create buzzer controller
 	let buzzer_pin = Output::new(p.GPIO14, Level::Low, OutputConfig::default());

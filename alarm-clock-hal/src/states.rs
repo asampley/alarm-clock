@@ -1,5 +1,3 @@
-use defmt::Format;
-
 use embassy_time::{Duration, Instant, Timer};
 
 use embassy_sync::lazy_lock::LazyLock;
@@ -150,7 +148,8 @@ pub enum ConcreteState<'a> {
 	Play(StatePlay),
 }
 
-#[derive(Clone, Copy, Format)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum StateTransition {
 	Clock,
 	MainMenu,
@@ -213,7 +212,8 @@ impl State for StateClock {
 	}
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 struct MenuItem<T: 'static> {
 	name: &'static str,
 	items: MenuContents<T>,
@@ -235,7 +235,8 @@ impl<T> MenuItem<T> {
 	}
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum MenuContents<T: 'static> {
 	Leaf(T),
 	Menu(&'static [MenuItem<T>]),

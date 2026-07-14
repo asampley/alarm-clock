@@ -1,4 +1,4 @@
-use embassy_executor::SpawnToken;
+use embassy_executor::{SpawnError, SpawnToken};
 use embassy_time::{Duration, Instant, Timer};
 
 use embedded_hal::i2c::{ErrorType, I2c as SyncI2c};
@@ -37,9 +37,9 @@ pub type I2cTask<S, I> = fn(
 	EventSender,
 	AlphanumReceiver,
 	SensorSubscriber<'static>,
-) -> SpawnToken<S>;
+) -> Result<SpawnToken<S>, SpawnError>;
 
-pub async fn i2c_task<I: SyncI2c + AsyncI2c + ErrorType<Error: defmt::Format>>(
+pub async fn i2c_task<I: SyncI2c + AsyncI2c + ErrorType<Error: defmt_or_log::FormatOrDebug>>(
 	mut i2c: I,
 	alphanum: Alphanum,
 	bmp: Bmp180,

@@ -1,4 +1,4 @@
-use embassy_executor::SpawnToken;
+use embassy_executor::{SpawnError, SpawnToken};
 use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
 
 use crate::channel::event::SensorEvent;
@@ -11,9 +11,9 @@ pub type DhtTask<S, P> = fn(
 	dht: Dht11<P>,
 	sensor_subscriber: SensorSubscriber<'static>,
 	event_sender: EventSender,
-) -> SpawnToken<S>;
+) -> Result<SpawnToken<S>, SpawnError>;
 
-pub async fn dht_task<Pin: InputPin + OutputPin + ErrorType<Error: defmt::Format>>(
+pub async fn dht_task<Pin: InputPin + OutputPin + ErrorType<Error: defmt_or_log::FormatOrDebug>>(
 	mut humid_temp: Dht11<Pin>,
 	mut sensor_subscriber: SensorSubscriber<'static>,
 	event_sender: EventSender,

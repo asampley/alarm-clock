@@ -3,6 +3,9 @@ name = "dir-static"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+defmt = ["dep:defmt"]
+
 [dependencies]
 dir-static-macro = { path = "../dir-static-macro/" }
-defmt = "1.0"
+defmt = { version = "1.0", optional = true }

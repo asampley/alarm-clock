@@ -2,7 +2,7 @@ use bincode::{
 	Decode, Encode,
 	config::{Configuration, Fixint, Limit, LittleEndian},
 };
-use defmt::{Debug2Format, Format};
+use defmt_or_log::Debug2Format;
 use embassy_sync::once_lock::OnceLock;
 
 use thiserror::Error;
@@ -20,7 +20,8 @@ pub static LOAD_HAL: OnceLock<LoadSettings> = OnceLock::new();
 
 type BincodeConfig = Configuration<LittleEndian, Fixint, Limit<SETTINGS_MAX_SIZE>>;
 
-#[derive(Decode, Encode, Format)]
+#[derive(Debug, Decode, Encode)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Settings {
 	pub alarm_song_index: usize,
 }

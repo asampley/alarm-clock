@@ -1,4 +1,4 @@
-use embassy_executor::SpawnToken;
+use embassy_executor::{SpawnError, SpawnToken};
 use embedded_hal::digital::{ErrorType, InputPin};
 use embedded_hal_async::digital::Wait;
 
@@ -8,9 +8,10 @@ use crate::circuit::button::Button;
 use crate::error;
 
 /// Note: needs pool size 3
-pub type PollInputTask<S, P> = fn(EventSender, Button<P>, ButtonFunction) -> SpawnToken<S>;
+pub type PollInputTask<S, P> =
+	fn(EventSender, Button<P>, ButtonFunction) -> Result<SpawnToken<S>, SpawnError>;
 
-pub async fn poll_input<Pin: InputPin + Wait + ErrorType<Error: defmt::Format>>(
+pub async fn poll_input<Pin: InputPin + Wait + ErrorType<Error: defmt_or_log::FormatOrDebug>>(
 	event_sender: EventSender,
 	mut button: Button<Pin>,
 	function: ButtonFunction,

@@ -1,4 +1,3 @@
-use defmt::Format;
 use embassy_time::{Duration, Instant, TICK_HZ, TimeoutError, WithTimeout};
 use heapless::String;
 
@@ -21,7 +20,8 @@ pub fn time_since(time: Instant) -> Option<Duration> {
 	Instant::now().checked_duration_since(time)
 }
 
-#[derive(Clone, Copy, Format, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockTime {
 	pub minutes: u16,
 }

@@ -1,4 +1,4 @@
-use embassy_executor::SpawnToken;
+use embassy_executor::{SpawnError, SpawnToken};
 use embassy_time::{Instant, Timer};
 use embedded_hal::digital::{ErrorType, OutputPin};
 
@@ -10,9 +10,9 @@ use crate::error;
 use crate::synth::Synth;
 
 pub type UpdateBuzzerTask<S, P> =
-	fn(MidiNoteReceiver, Buzzer<P>, Synth<SYNTH_NOTES>) -> SpawnToken<S>;
+	fn(MidiNoteReceiver, Buzzer<P>, Synth<SYNTH_NOTES>) -> Result<SpawnToken<S>, SpawnError>;
 
-pub async fn update_buzzer<Pin: OutputPin + ErrorType<Error: defmt::Format>>(
+pub async fn update_buzzer<Pin: OutputPin + ErrorType<Error: defmt_or_log::FormatOrDebug>>(
 	note_receiver: MidiNoteReceiver,
 	mut buzzer: Buzzer<Pin>,
 	mut synth: Synth<SYNTH_NOTES>,

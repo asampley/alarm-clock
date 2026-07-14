@@ -1,5 +1,3 @@
-use defmt::Format;
-
 use embassy_time::{Duration, Instant};
 use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
 
@@ -14,10 +12,19 @@ const BIT_X_UP_MID: Duration =
 const BIT_TIMEOUT: Duration = Duration::from_micros(1000);
 const ACKNOWLEDGE_TIMEOUT: Duration = Duration::from_millis(10);
 
-#[derive(Format)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SyncError<Pin: ErrorType> {
 	Pin(Pin::Error),
 	Timeout,
+}
+
+impl<Pin: ErrorType> core::fmt::Debug for SyncError<Pin> {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		match self {
+			Self::Pin(arg0) => f.debug_tuple("Pin").field(arg0).finish(),
+			Self::Timeout => write!(f, "Timeout"),
+		}
+	}
 }
 
 pub struct Dht<Pin> {
@@ -59,7 +66,8 @@ impl<Pin: InputPin + OutputPin> Dht11<Pin> {
 	}
 }
 
-#[derive(Copy, Clone, Format)]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Dht11Reading {
 	pub humidity: u8,
 	pub temperature: u8,

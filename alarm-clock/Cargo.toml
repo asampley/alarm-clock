@@ -1,36 +1,77 @@
 [package]
 name = "alarm-clock"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 
 [dependencies]
 alarm-clock-hal = { path = "../alarm-clock-hal" }
 
-defmt = { version = "1.0" }
-embassy-executor = { version = "0.9.0" }
+thiserror = { version = "2.0", default-features = false }
+
+defmt-or-log = { version = "0.2.3" }
+embassy-executor = { version = "0.10.0" }
 embassy-sync = { version = "0.7.0" }
+
+embedded-hal = { version = "1.0" }
+embedded-hal-async = { version = "1.0" }
+embedded-storage = { version = "0.3.1" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+alarm-clock-hal = { path = "../alarm-clock-hal", features = ["log"] }
+
+critical-section = { version = "1.1", features = ["std"] }
+defmt-or-log = { version = "0.2.3", features = ["log"] }
+log = { version = "0.4.33" }
+
+embassy-executor = { version = "0.10.0", features = ["executor-thread","log","platform-std"] }
+embassy-time = { version = "0.5.1", features = ["log","std"] }
+
+linux-embedded-hal = { version = "0.4.0", features = ["gpio_cdev", "async-tokio"] }
+
+serde = { version = "1.0", features = ["derive"] }
+toml = { version = "1.0" }
+
+[target.xtensa-esp32-none-elf.dependencies]
+alarm-clock-hal = { path = "../alarm-clock-hal", features = ["defmt"] }
+
+defmt-or-log = { version = "0.2.3", features = ["defmt"] }
+defmt = { version = "1.0" }
 
 embedded-hal = { version = "1.0", features = ["defmt-03"] }
 embedded-hal-async = { version = "1.0", features = ["defmt-03"] }
-embedded-storage = { version = "0.3.1" }
 
-[target.xtensa-esp32-none-elf.dependencies]
 esp-backtrace = { version = "0.18.0", features = ["panic-handler", "defmt", "esp32"] }
-esp-bootloader-esp-idf = { version = "0.4.0", features = ["defmt", "esp32"] }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["defmt", "esp32"] }
 esp-hal = { version = "1.0", features = ["defmt", "unstable", "esp32"] }
-esp-rtos = { version = "0.2.0", features = ["embassy", "esp32"] }
+esp-rtos = { version = "0.3.0", features = ["embassy", "esp32"] }
 esp-storage = { version = "0.8.0", features = ["defmt", "esp32"] }
 
 [target.xtensa-esp32s3-none-elf.dependencies]
+alarm-clock-hal = { path = "../alarm-clock-hal", features = ["defmt"] }
+
+defmt-or-log = { version = "0.2.3", features = ["defmt"] }
+defmt = { version = "1.0" }
+
+embedded-hal = { version = "1.0", features = ["defmt-03"] }
+embedded-hal-async = { version = "1.0", features = ["defmt-03"] }
+
 esp-backtrace = { version = "0.18.0", features = ["panic-handler", "defmt", "esp32s3"] }
-esp-bootloader-esp-idf = { version = "0.4.0", features = ["defmt", "esp32s3"] }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["defmt", "esp32s3"] }
 esp-hal = { version = "1.0", features = ["defmt", "unstable", "esp32s3"] }
-esp-rtos = { version = "0.2.0", features = ["embassy", "esp32s3"] }
+esp-rtos = { version = "0.3.0", features = ["embassy", "esp32s3"] }
 esp-storage = { version = "0.8.0", features = ["defmt", "esp32s3"] }
 
 [target.xtensa-esp32s2-none-elf.dependencies]
+alarm-clock-hal = { path = "../alarm-clock-hal", features = ["defmt"] }
+
+defmt-or-log = { version = "0.2.3", features = ["defmt"] }
+defmt = { version = "1.0" }
+
+embedded-hal = { version = "1.0", features = ["defmt-03"] }
+embedded-hal-async = { version = "1.0", features = ["defmt-03"] }
+
 esp-backtrace = { version = "0.18.0", features = ["panic-handler", "defmt", "esp32s2"] }
-esp-bootloader-esp-idf = { version = "0.4.0", features = ["defmt", "esp32s2"] }
+esp-bootloader-esp-idf = { version = "0.5.0", features = ["defmt", "esp32s2"] }
 esp-hal = { version = "1.0", features = ["defmt", "unstable", "esp32s2"] }
-esp-rtos = { version = "0.2.0", features = ["embassy", "esp32s2"] }
+esp-rtos = { version = "0.3.0", features = ["embassy", "esp32s2"] }
 esp-storage = { version = "0.8.0", features = ["defmt", "esp32s2"] }

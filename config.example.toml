@@ -1,0 +1,9 @@
+gpio_chip = "/dev/gpiochip0"
+i2c_device = "/dev/i2c-0"
+
+[lines]
+buzzer = 0
+select = 1
+prev = 2
+next = 3
+dht = 4

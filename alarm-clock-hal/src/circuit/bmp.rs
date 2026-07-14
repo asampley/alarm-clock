@@ -1,5 +1,3 @@
-use defmt::Format;
-
 use embassy_time::{Duration, Timer};
 
 use embedded_hal::i2c::I2c as SyncI2c;
@@ -32,22 +30,39 @@ pub struct Bmp180 {
 	cal: Calibration,
 }
 
+#[derive(Debug)]
 pub struct Temperature(i64);
+#[derive(Debug)]
 pub struct Pressure(i64);
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct BmpReading {
 	pub temperature: Temperature,
 	pub pressure: Pressure,
 }
 
-impl Format for Temperature {
+impl core::fmt::Display for Temperature {
+	fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+		write!(fmt, "{}.{}C", self.0 / 10, self.0 % 10)
+	}
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for Temperature {
 	fn format(&self, fmt: defmt::Formatter<'_>) {
 		defmt::write!(fmt, "{}.{}C", self.0 / 10, self.0 % 10);
 	}
 }
 
-impl Format for Pressure {
+impl core::fmt::Display for Pressure {
+	fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+		write!(fmt, "{}Pa", self.0)
+	}
+}
+
+#[cfg(feature = "defmt")]
+impl defmt::Format for Pressure {
 	fn format(&self, fmt: defmt::Formatter<'_>) {
 		defmt::write!(fmt, "{}Pa", self.0);
 	}
@@ -75,7 +90,8 @@ impl Pressure {
 	}
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 struct Calibration {
 	ac1: i16,
 	ac2: i16,
@@ -123,7 +139,7 @@ impl Bmp180 {
 			md: i16::from_be_bytes([buffer[20], buffer[21]]),
 		};
 
-		info!("{}", calibration);
+		info!("{:?}", calibration);
 
 		Ok(calibration)
 	}

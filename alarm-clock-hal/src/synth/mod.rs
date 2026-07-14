@@ -4,7 +4,6 @@ pub mod pulse;
 #[cfg(feature = "synth-sample")]
 pub mod sample;
 
-use defmt::Format;
 use embassy_time::{Duration, Instant};
 use enum_dispatch::enum_dispatch;
 use heapless::index_map::FnvIndexMap;
@@ -46,7 +45,8 @@ pub enum DynSynthUpdater {
 	Sample(sample::SampleUpdater),
 }
 
-#[derive(Clone, Copy, Format)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum Updater {
 	#[cfg(feature = "synth-pulse")]
 	Pulse,
@@ -71,7 +71,8 @@ pub trait SynthUpdater {
 	) -> Pulse;
 }
 
-#[derive(Clone, Format)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct SynthConfig {
 	pub max_note_half_delay_us: u64,
 	pub updater: Updater,
@@ -79,7 +80,8 @@ pub struct SynthConfig {
 	pub hold: InstrumentConfig,
 }
 
-#[derive(Clone, Format)]
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InstrumentConfig {
 	pub sustain_ratio: f64,
 	pub decay_constant: f64,
@@ -92,21 +94,24 @@ struct SoundKey {
 	key: u7,
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Pulse {
 	pub on: Duration,
 	pub off: Duration,
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Sound {
-	#[defmt(Debug2Format)]
+	#[cfg_attr(feature = "defmt", defmt(Debug2Format))]
 	instrument: u7,
 	period: Duration,
 	amplitude: Amplitude,
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 enum Amplitude {
 	Decay {
 		amplitude: f64,

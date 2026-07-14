@@ -1,15 +1,8 @@
 [target.xtensa-esp32s3-none-elf]
 runner = "probe-rs run --chip=esp32s3"
-
-[env]
-DEFMT_LOG="info"
-
-[build]
 rustflags = [
 	"-C", "link-arg=-nostartfiles",
 ]
 
-target = "xtensa-esp32s3-none-elf"
-
-[unstable]
-build-std = ["core"]
+[env]
+DEFMT_LOG="info"

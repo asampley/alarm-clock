@@ -1,5 +1,3 @@
-use defmt::Format;
-
 use embassy_time::Instant;
 
 use heapless::{String, Vec};
@@ -13,7 +11,8 @@ use crate::util::Calf;
 
 use super::event::*;
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum EventMessage {
 	Button(ButtonEvent),
 	Song(SongEvent),
@@ -40,31 +39,35 @@ impl From<TimerEvent> for EventMessage {
 	}
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SynthMessage {
 	Midi {
-		#[defmt(Debug2Format)]
+		#[cfg_attr(feature = "defmt", defmt(Debug2Format))]
 		channel: u4,
-		#[defmt(Debug2Format)]
+		#[cfg_attr(feature = "defmt", defmt(Debug2Format))]
 		message: MidiMessage,
 	},
 	Clear,
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum PlayerMessage {
 	Loop(Midi),
 	Play(Midi),
 	Stop,
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum TimerMessage {
 	Seconds(u64),
 	Remove(Instant),
 }
 
-#[derive(Format)]
+#[derive(Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum AlphanumMessage {
 	Static(Calf<'static, String<4>>),
 	StaticRendered([Char; 4]),
@@ -75,7 +78,8 @@ pub enum AlphanumMessage {
 	Blink(BlinkRate),
 }
 
-#[derive(Clone, Copy, Format)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum SensorMessage {
 	Update,
 }

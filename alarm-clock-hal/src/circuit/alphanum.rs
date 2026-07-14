@@ -1,5 +1,3 @@
-use defmt::Format;
-
 use derive_more::BitOr;
 
 use embedded_hal::i2c::I2c as SyncI2c;
@@ -26,7 +24,8 @@ pub struct Alphanum {
 	ascii_uppercase: bool,
 }
 
-#[derive(Clone, Copy, Format)]
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[allow(dead_code)]
 pub enum BlinkRate {
 	Off,
@@ -35,7 +34,8 @@ pub enum BlinkRate {
 	TwoHz,
 }
 
-#[derive(BitOr, Clone, Copy, Default, Format)]
+#[derive(BitOr, Clone, Copy, Debug, Default)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Char(u16);
 
 pub const DOT: Char = char_to_alphanum('.');

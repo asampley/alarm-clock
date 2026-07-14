@@ -2,10 +2,11 @@
 #![feature(impl_trait_in_assoc_type)]
 #![feature(never_type)]
 
-use defmt::Debug2Format;
-use defmt_rtt as _;
+use defmt_or_log::Debug2Format;
 
-pub use defmt::{debug, error, info, trace, warn};
+pub use defmt_or_log::{debug, error, info, trace, warn};
+#[cfg(feature = "defmt")]
+use defmt_rtt as _;
 
 use embassy_executor::{SpawnError, Spawner};
 
@@ -163,7 +164,7 @@ where
 		MIDI_NOTE_CHANNEL.receiver(),
 		buzzer,
 		synth,
-	))?;
+	)?);
 
 	// start task to read poll button
 	for (function, button) in buttons {
@@ -171,7 +172,7 @@ where
 			EVENT_CHANNEL.sender(),
 			button,
 			function,
-		))?;
+		)?);
 	}
 
 	// start playing midi file
@@ -179,7 +180,7 @@ where
 		PLAYER_CHANNEL.receiver(),
 		MIDI_NOTE_CHANNEL.sender(),
 		EVENT_CHANNEL.sender(),
-	))?;
+	)?);
 
 	// start i2c task
 	spawner.spawn((startup_config.i2c_task)(
@@ -189,23 +190,26 @@ where
 		EVENT_CHANNEL.sender(),
 		ALPHANUM_CHANNEL.receiver(),
 		SENSOR_CHANNEL.subscriber().unwrap(),
-	))?;
+	)?);
 
 	// start alarm task
 	spawner.spawn(alarm_task(
 		EVENT_CHANNEL.sender(),
 		SENSOR_CHANNEL.publisher().unwrap(),
-	))?;
+	)?);
 
 	// start timer task
-	spawner.spawn(timer_task(TIMER_CHANNEL.receiver(), EVENT_CHANNEL.sender()))?;
+	spawner.spawn(timer_task(
+		TIMER_CHANNEL.receiver(),
+		EVENT_CHANNEL.sender(),
+	)?);
 
 	// start dht task
 	spawner.spawn((startup_config.dht_task)(
 		dht,
 		SENSOR_CHANNEL.subscriber().unwrap(),
 		EVENT_CHANNEL.sender(),
-	))?;
+	)?);
 
 	let mut state_transition = StateTransition::Clock;
 
