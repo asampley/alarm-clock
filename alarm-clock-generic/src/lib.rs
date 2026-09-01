@@ -1,6 +1,5 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
-#![feature(never_type)]
 
 use defmt_or_log::Debug2Format;
 

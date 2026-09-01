@@ -1,14 +1,14 @@
-use alarm_clock_hal::channel::event::{ButtonDirection, ButtonFunction};
-use alarm_clock_hal::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
-use alarm_clock_hal::circuit::alphanum::Alphanum;
-use alarm_clock_hal::circuit::bmp::Bmp180;
-use alarm_clock_hal::circuit::button::Button;
-use alarm_clock_hal::circuit::buzzer::Buzzer;
-use alarm_clock_hal::circuit::dht::Dht11;
-pub use alarm_clock_hal::startup;
-use alarm_clock_hal::storage::SETTINGS_MAX_SIZE;
-use alarm_clock_hal::synth::Synth;
-use alarm_clock_hal::{Error, SYNTH_NOTES, StartupConfig};
+use alarm_clock_generic::channel::event::{ButtonDirection, ButtonFunction};
+use alarm_clock_generic::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
+use alarm_clock_generic::circuit::alphanum::Alphanum;
+use alarm_clock_generic::circuit::bmp::Bmp180;
+use alarm_clock_generic::circuit::button::Button;
+use alarm_clock_generic::circuit::buzzer::Buzzer;
+use alarm_clock_generic::circuit::dht::Dht11;
+pub use alarm_clock_generic::startup;
+use alarm_clock_generic::storage::SETTINGS_MAX_SIZE;
+use alarm_clock_generic::synth::Synth;
+use alarm_clock_generic::{Error, SYNTH_NOTES, StartupConfig};
 use defmt::{error, info};
 
 use embassy_executor::Spawner;
@@ -115,7 +115,7 @@ async fn update_buzzer(
 	buzzer: Buzzer<BuzzerPin>,
 	synth: Synth<SYNTH_NOTES>,
 ) {
-	alarm_clock_hal::tasks::buzzer::update_buzzer(note_receiver, buzzer, synth).await
+	alarm_clock_generic::tasks::buzzer::update_buzzer(note_receiver, buzzer, synth).await
 }
 
 #[embassy_executor::task(pool_size = 3)]
@@ -124,7 +124,7 @@ async fn poll_input(
 	button: Button<ButtonPin>,
 	function: ButtonFunction,
 ) {
-	alarm_clock_hal::tasks::input::poll_input(event_sender, button, function).await
+	alarm_clock_generic::tasks::input::poll_input(event_sender, button, function).await
 }
 
 #[embassy_executor::task]
@@ -136,7 +136,7 @@ async fn i2c_task(
 	alphanum_receiver: AlphanumReceiver,
 	sensor_subscriber: SensorSubscriber<'static>,
 ) {
-	alarm_clock_hal::tasks::i2c::i2c_task(
+	alarm_clock_generic::tasks::i2c::i2c_task(
 		i2c,
 		alphanum,
 		bmp,
@@ -153,7 +153,7 @@ async fn dht_task(
 	sensor_subscriber: SensorSubscriber<'static>,
 	event_sender: EventSender,
 ) {
-	alarm_clock_hal::tasks::dht::dht_task(humid_temp, sensor_subscriber, event_sender).await
+	alarm_clock_generic::tasks::dht::dht_task(humid_temp, sensor_subscriber, event_sender).await
 }
 
 // position settings at the end of the storage space

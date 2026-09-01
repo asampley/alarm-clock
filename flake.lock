@@ -61,7 +61,10 @@
       "inputs": {
         "fenix": "fenix",
         "nix-pkgset": "nix-pkgset",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": "nixpkgs",
+        "xtensa-gcc-x86_64-linux-bin": "xtensa-gcc-x86_64-linux-bin",
+        "xtensa-rust-src": "xtensa-rust-src",
+        "xtensa-rust-x86_64-linux-bin": "xtensa-rust-x86_64-linux-bin"
       }
     },
     "rust-analyzer-src": {
@@ -79,6 +82,45 @@
         "ref": "nightly",
         "repo": "rust-analyzer",
         "type": "github"
+      }
+    },
+    "xtensa-gcc-x86_64-linux-bin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781021594,
+        "narHash": "sha256-D02nz89injwvi+CD8tE8j/xkp1YrS28XvAmqCd3Dm+A=",
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-16.1.0_20260609/xtensa-esp-elf-16.1.0_20260609-x86_64-linux-gnu.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-16.1.0_20260609/xtensa-esp-elf-16.1.0_20260609-x86_64-linux-gnu.tar.xz"
+      }
+    },
+    "xtensa-rust-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783505347,
+        "narHash": "sha256-0Q/hfXD0R1pVzTgS0N8X2D3ZvPYX4y4k/EmxPy2474k=",
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.97.0.0/rust-src-1.97.0.0.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.97.0.0/rust-src-1.97.0.0.tar.xz"
+      }
+    },
+    "xtensa-rust-x86_64-linux-bin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783505347,
+        "narHash": "sha256-CnxysCl+Hcllge0olHSBOstgbhqDsCRAhg+mDUAnEs0=",
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.97.0.0/rust-1.97.0.0-x86_64-unknown-linux-gnu.tar.xz"
+      },
+      "original": {
+        "type": "tarball",
+        "url": "https://github.com/esp-rs/rust-build/releases/download/v1.97.0.0/rust-1.97.0.0-x86_64-unknown-linux-gnu.tar.xz"
       }
     }
   },

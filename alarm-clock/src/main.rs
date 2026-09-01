@@ -8,6 +8,7 @@ mod xtensa;
 
 #[cfg(target_os = "none")]
 #[cfg_attr(target_arch = "xtensa", esp_rtos::main)]
+#[cfg_attr(target_arch = "riscv64", embassy_executor::main)]
 async fn main(spawner: embassy_executor::Spawner) {
 	#[cfg(target_arch = "xtensa")]
 	xtensa::run(spawner).await.unwrap();

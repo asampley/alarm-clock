@@ -1,5 +1,5 @@
 [package]
-name = "alarm-clock-hal"
+name = "alarm-clock-generic"
 version = "0.3.0"
 authors = ["Alex Sampley"]
 edition = "2024"

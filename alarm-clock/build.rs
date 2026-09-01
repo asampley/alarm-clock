@@ -3,7 +3,7 @@ fn main() {
 	let mut split = target.split('-');
 
 	let arch = split.next().unwrap();
-	let _vendor = split.next().unwrap();
+	let vendor = split.next().unwrap();
 	let os = split.next().unwrap();
 
 	if os != "linux" {
@@ -14,7 +14,7 @@ fn main() {
 			println!(
 				"cargo:rustc-check-cfg=cfg(xtensa, values(\"esp32\", \"esp32s2\", \"esp32s3\"))"
 			);
-			let xtensa = split.next().unwrap();
+			let xtensa = vendor;
 			println!("cargo:rustc-cfg=xtensa=\"{}\"", xtensa);
 		}
 	}
