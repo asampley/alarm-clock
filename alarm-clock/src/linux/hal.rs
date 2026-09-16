@@ -1,74 +1,168 @@
-use linux_embedded_hal::{CdevPin, CdevPinError, I2CError, I2cdev};
+use async_channel::{Receiver, Sender};
+use embedded_hal::{digital::PinState, i2c::I2c as _};
+use futures_lite::future::block_on;
+use gpiocdev_embedded_hal::{async_io::InputPin, OutputPin};
+use linux_embedded_hal::I2cdev;
+use thiserror::Error;
 
-pub struct Pin(CdevPin);
-pub struct I2c(I2cdev);
-
-impl embedded_hal::digital::ErrorType for Pin {
-	type Error = CdevPinError;
+pub enum FlexPin {
+	Input(InputPin),
+	Output(OutputPin),
+	Poison,
 }
 
-impl embedded_hal::digital::InputPin for Pin {
+pub struct I2c {
+	send_transaction: Sender<(u8, Box<[OwnedOperation]>)>,
+	receive_transaction_response: Receiver<Result<(), linux_embedded_hal::I2CError>>,
+}
+
+pub enum OwnedOperation {
+	Read(Box<[u8]>),
+	Write(Box<[u8]>),
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+	#[error("poisoned flex pin")]
+	Poisoned,
+	#[error("gpio error")]
+	Gpio(#[from] gpiocdev_embedded_hal::Error),
+}
+
+#[derive(Debug, Error)]
+pub enum I2cError {
+	#[error("internal channel error")]
+	SendRequest(#[source] async_channel::SendError<(u8, Box<[OwnedOperation]>)>),
+	#[error("internal channel error")]
+	RecvResponse(#[source] async_channel::RecvError),
+	// Errors currently can't be observed because they're in a thread that's not joined
+	//#[error("internal channel error")]
+	//SendResponse(#[source] async_channel::SendError<Result<(), linux_embedded_hal::I2CError>>),
+	//#[error("internal channel error")]
+	//RecvRequest(#[source] async_channel::RecvError),
+	#[error("i2c error")]
+	I2c(#[from] linux_embedded_hal::I2CError),
+}
+
+impl embedded_hal::digital::Error for Error {
+	fn kind(&self) -> embedded_hal::digital::ErrorKind {
+		embedded_hal::digital::ErrorKind::Other
+	}
+}
+
+impl FlexPin {
+	fn into_input_pin(self) -> Result<Self, Error> {
+		Ok(match self {
+			Self::Output(o) => Self::Input(o.into_input_pin()?.into()),
+			x => x,
+		})
+	}
+
+	fn mut_input_pin(&mut self) -> Result<&mut InputPin, Error> {
+		if !matches!(self, Self::Input(_)) {
+			let mut temp = FlexPin::Poison;
+			core::mem::swap(self, &mut temp);
+			core::mem::swap(self, &mut temp.into_input_pin()?);
+		}
+
+		if let Self::Input(i) = self {
+			Ok(i)
+		} else {
+			Err(Error::Poisoned)
+		}
+	}
+
+	fn into_output_pin(self) -> Result<Self, Error> {
+		Ok(match self {
+			Self::Input(i) => Self::Output(i.into_output_pin(PinState::Low)?),
+			x => x,
+		})
+	}
+
+	fn mut_output_pin(&mut self) -> Result<&mut OutputPin, Error> {
+		if !matches!(self, Self::Input(_)) {
+			let mut temp = FlexPin::Poison;
+			core::mem::swap(self, &mut temp);
+			core::mem::swap(self, &mut temp.into_output_pin()?);
+		}
+
+		if let Self::Output(o) = self {
+			Ok(o)
+		} else {
+			Err(Error::Poisoned)
+		}
+	}
+}
+
+impl embedded_hal::digital::ErrorType for FlexPin {
+	type Error = Error;
+}
+
+impl embedded_hal::digital::InputPin for FlexPin {
 	fn is_high(&mut self) -> Result<bool, Self::Error> {
-		Ok(self.0.is_high()?)
+		Ok(self.mut_input_pin()?.is_high()?)
 	}
 
 	fn is_low(&mut self) -> Result<bool, Self::Error> {
-		Ok(self.0.is_low()?)
+		Ok(self.mut_input_pin()?.is_low()?)
 	}
 }
 
-impl embedded_hal::digital::OutputPin for Pin {
+impl embedded_hal::digital::OutputPin for FlexPin {
 	fn set_low(&mut self) -> Result<(), Self::Error> {
-		Ok(self.0.set_low()?)
+		Ok(self.mut_output_pin()?.set_low()?)
 	}
 
 	fn set_high(&mut self) -> Result<(), Self::Error> {
-		Ok(self.0.set_high()?)
+		Ok(self.mut_output_pin()?.set_high()?)
 	}
 }
 
-impl embedded_hal_async::digital::Wait for Pin {
+impl embedded_hal_async::digital::Wait for FlexPin {
 	async fn wait_for_high(&mut self) -> Result<(), Self::Error> {
-		todo!()
+		Ok(self.mut_input_pin()?.wait_for_high().await?)
 	}
 
 	async fn wait_for_low(&mut self) -> Result<(), Self::Error> {
-		todo!()
+		Ok(self.mut_input_pin()?.wait_for_low().await?)
 	}
 
 	async fn wait_for_rising_edge(&mut self) -> Result<(), Self::Error> {
-		todo!()
+		Ok(self.mut_input_pin()?.wait_for_rising_edge().await?)
 	}
 
 	async fn wait_for_falling_edge(&mut self) -> Result<(), Self::Error> {
-		todo!()
+		Ok(self.mut_input_pin()?.wait_for_falling_edge().await?)
 	}
 
 	async fn wait_for_any_edge(&mut self) -> Result<(), Self::Error> {
-		todo!()
+		Ok(self.mut_input_pin()?.wait_for_any_edge().await?)
 	}
 }
 
-impl From<CdevPin> for Pin {
-	fn from(value: CdevPin) -> Self {
-		Self(value)
+impl From<InputPin> for FlexPin {
+	fn from(value: InputPin) -> Self {
+		Self::Input(value)
 	}
 }
 
-//impl embedded_hal::digital::Error for PinError {
-//	fn kind(&self) -> embedded_hal::digital::ErrorKind {
-//		embedded_hal::digital::ErrorKind::Other
-//	}
-//}
+impl From<OutputPin> for FlexPin {
+	fn from(value: OutputPin) -> Self {
+		Self::Output(value)
+	}
+}
 
-//impl From<CdevPinError> for PinError {
-//	fn from(value: CdevPinError) -> Self {
-//		Self(value)
-//	}
-//}
+impl embedded_hal::i2c::Error for I2cError {
+	fn kind(&self) -> embedded_hal::i2c::ErrorKind {
+		match self {
+			Self::I2c(e) => e.kind(),
+			_ => embedded_hal::i2c::ErrorKind::Other,
+		}
+	}
+}
 
 impl embedded_hal::i2c::ErrorType for I2c {
-	type Error = I2CError;
+	type Error = I2cError;
 }
 
 impl embedded_hal::i2c::I2c for I2c {
@@ -77,7 +171,9 @@ impl embedded_hal::i2c::I2c for I2c {
 		address: u8,
 		operations: &mut [embedded_hal::i2c::Operation<'_>],
 	) -> Result<(), Self::Error> {
-		Ok(self.0.transaction(address, operations)?)
+		block_on(async move {
+			embedded_hal_async::i2c::I2c::transaction(self, address, operations).await
+		})
 	}
 }
 
@@ -87,24 +183,47 @@ impl embedded_hal_async::i2c::I2c for I2c {
 		address: u8,
 		operations: &mut [embedded_hal::i2c::Operation<'_>],
 	) -> Result<(), Self::Error> {
-		todo!()
+		let operations: Box<[_]> = operations.iter().map(|op| {
+			match op {
+				embedded_hal::i2c::Operation::Read(buf) => OwnedOperation::Read(buf.to_vec().into_boxed_slice()),
+				embedded_hal::i2c::Operation::Write(buf) => OwnedOperation::Write(buf.to_vec().into_boxed_slice()),
+			}
+		}).collect();
+
+		self.send_transaction.send((address, operations)).await.map_err(I2cError::SendRequest)?;
+		Ok(self.receive_transaction_response.recv().await.map_err(I2cError::RecvResponse)??)
 	}
 }
 
 impl From<I2cdev> for I2c {
-	fn from(value: I2cdev) -> Self {
-		Self(value)
+	fn from(mut value: I2cdev) -> Self {
+		let (requests_sender, requests_receiver) = async_channel::unbounded();
+		let (responses_sender, responses_receiver) = async_channel::unbounded();
+
+		std::thread::spawn(move || {
+			let send = responses_sender;
+			let receive = requests_receiver;
+
+			block_on(async {
+				loop {
+					let request: (u8, Box<[OwnedOperation]>) = receive.recv().await.unwrap();
+
+					let alloc = bumpalo::Bump::new();
+
+					let mut operations: Vec<_> = request.1.into_iter().map(|op| match op {
+						OwnedOperation::Read(buf) => embedded_hal::i2c::Operation::Read(alloc.alloc(buf)),
+						OwnedOperation::Write(buf) => embedded_hal::i2c::Operation::Write(alloc.alloc(buf)),
+					})
+					.collect();
+
+					send.send(value.transaction(request.0, &mut operations)).await.unwrap();
+				}
+			});
+		});
+
+		Self {
+			send_transaction: requests_sender,
+			receive_transaction_response: responses_receiver,
+		}
 	}
 }
-
-//impl embedded_hal::i2c::Error for I2cError {
-//	fn kind(&self) -> embedded_hal::i2c::ErrorKind {
-//		embedded_hal::i2c::ErrorKind::Other
-//	}
-//}
-
-//impl From<I2CError> for I2cError {
-//	fn from(value: I2CError) -> Self {
-//		Self(value)
-//	}
-//}

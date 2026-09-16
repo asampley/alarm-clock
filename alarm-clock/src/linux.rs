@@ -19,13 +19,16 @@ use clap::Parser;
 use log::{error, info};
 
 use embassy_executor::Spawner;
-use linux_embedded_hal::gpio_cdev::{self, Chip, LineRequestFlags};
+use gpiocdev::{ line::Bias, line::Drive, line::Value };
 use linux_embedded_hal::i2cdev::linux::LinuxI2CError;
-use linux_embedded_hal::{CdevPin, I2cdev};
+use linux_embedded_hal::I2cdev;
+use gpiocdev_embedded_hal::{ OutputPin, InputPin };
 use serde::Deserialize;
 use thiserror::Error;
 
-use self::hal::{I2c, Pin};
+use crate::linux::hal::{FlexPin, I2c};
+
+type AsyncInputPin = gpiocdev_embedded_hal::async_io::InputPin;
 
 #[derive(Debug, Parser)]
 #[command(version, about, long_about = None)]
@@ -40,8 +43,10 @@ pub enum Error {
 	Io(#[from] std::io::Error),
 	#[error("config error")]
 	Toml(#[from] toml::de::Error),
-	#[error("cdev error")]
-	Cdev(#[from] gpio_cdev::Error),
+	#[error("gpio error")]
+	Gpio(#[from] gpiocdev::Error),
+	#[error("gpio hal error")]
+	GpioHal(#[from] gpiocdev_embedded_hal::Error),
 	#[error("i2c error")]
 	I2c(#[from] LinuxI2CError),
 	#[error("startup error")]
@@ -50,56 +55,88 @@ pub enum Error {
 
 #[derive(Deserialize)]
 struct Config {
-	gpio_chip: PathBuf,
 	i2c_device: PathBuf,
-	lines: LineConfig,
+	device_config: DeviceConfig,
 }
 
 #[derive(Deserialize)]
-struct LineConfig {
-	buzzer: u32,
-	select: u32,
-	prev: u32,
-	next: u32,
-	dht: u32,
+struct GpioConfig {
+	gpio_chip: PathBuf,
+	line: u32,
+	internal_pull_resistor: bool,
+}
+
+#[derive(Deserialize)]
+struct DeviceConfig {
+	buzzer: GpioConfig,
+	select: GpioConfig,
+	prev: GpioConfig,
+	next: GpioConfig,
+	dht: GpioConfig,
 }
 
 pub async fn run(spawner: Spawner) -> Result<(), Error> {
-	use LineRequestFlags as LRF;
-
 	let args = Args::parse();
 
 	let config: Config = toml::from_str(&std::fs::read_to_string(&args.config)?)?;
 
-	let mut chip = Chip::new(config.gpio_chip)?;
-
 	// create buzzer controller
-	let buzzer_pin = CdevPin::new(chip.get_line(config.lines.buzzer)?.request(LRF::OUTPUT, 0, "alarm_clock_buzzer")?)?.into();
+	let buzzer_pin = OutputPin::try_from({
+		let gpio_config = config.device_config.buzzer;
+
+		gpiocdev::Request::builder()
+			.on_chip(gpio_config.gpio_chip)
+			.with_line(gpio_config.line)
+			.as_output(Value::Inactive)
+			.request()?
+	})?;
+
+	let button_pin_req = |c: &GpioConfig| {
+		let mut builder = gpiocdev::Request::builder();
+
+		builder
+			.on_chip(&c.gpio_chip)
+			.with_line(c.line);
+
+		if c.internal_pull_resistor {
+			builder.with_bias(Bias::PullUp);
+		}
+
+		builder.as_input().request()
+	};
 
 	// create button pollers
 	let button_pins = [
 		(
 			ButtonFunction::Select,
-			CdevPin::new(chip.get_line(config.lines.select)?.request(LRF::INPUT, 0, "alarm_clock_select")?)?.into(),
+			AsyncInputPin::from(InputPin::try_from(button_pin_req(&config.device_config.select)?)?),
 		),
 		(
 			ButtonFunction::Direction(ButtonDirection::Prev),
-			CdevPin::new(chip.get_line(config.lines.prev)?.request(LRF::INPUT, 0, "alarm_clock_prev")?)?.into(),
+			AsyncInputPin::from(InputPin::try_from(button_pin_req(&config.device_config.prev)?)?),
 		),
 		(
 			ButtonFunction::Direction(ButtonDirection::Next),
-			CdevPin::new(chip.get_line(config.lines.next)?.request(LRF::INPUT, 0, "alarm_clock_next")?)?.into(),
+			AsyncInputPin::from(InputPin::try_from(button_pin_req(&config.device_config.next)?)?),
 		),
 	];
 
 	let i2c = I2cdev::new(config.i2c_device)?.into();
 
-	let dht_pin = CdevPin::new(chip.get_line(config.lines.dht)?.request(
-		LRF::INPUT | LRF::OUTPUT | LRF::OPEN_DRAIN,
-		1,
-		"alarm_clock_dht",
-	)?)?
-	.into();
+	let dht_pin = FlexPin::from(OutputPin::try_from({
+		let gpio_config = config.device_config.dht;
+		let mut builder = gpiocdev::Request::builder();
+
+		builder
+			.on_chip(gpio_config.gpio_chip)
+			.with_line(gpio_config.line);
+
+		if gpio_config.internal_pull_resistor {
+			builder.with_bias(Bias::PullUp);
+		}
+
+		builder.with_drive(Drive::OpenDrain).request()?
+	})?);
 
 	startup(
 		StartupConfig {
@@ -124,14 +161,14 @@ pub async fn run(spawner: Spawner) -> Result<(), Error> {
 #[embassy_executor::task]
 async fn update_buzzer(
 	note_receiver: MidiNoteReceiver,
-	buzzer: Buzzer<Pin>,
+	buzzer: Buzzer<OutputPin>,
 	synth: Synth<SYNTH_NOTES>,
 ) {
 	alarm_clock_generic::tasks::buzzer::update_buzzer(note_receiver, buzzer, synth).await
 }
 
 #[embassy_executor::task(pool_size = 3)]
-async fn poll_input(event_sender: EventSender, button: Button<Pin>, function: ButtonFunction) {
+async fn poll_input(event_sender: EventSender, button: Button<AsyncInputPin>, function: ButtonFunction) {
 	alarm_clock_generic::tasks::input::poll_input(event_sender, button, function).await
 }
 
@@ -157,7 +194,7 @@ async fn i2c_task(
 
 #[embassy_executor::task]
 async fn dht_task(
-	humid_temp: Dht11<Pin>,
+	humid_temp: Dht11<FlexPin>,
 	sensor_subscriber: SensorSubscriber<'static>,
 	event_sender: EventSender,
 ) {

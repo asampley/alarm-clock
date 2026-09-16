@@ -1,9 +1,26 @@
-gpio_chip = "/dev/gpiochip0"
-i2c_device = "/dev/i2c-0"
+i2c_device = "/dev/i2c-1"
 
-[lines]
-buzzer = 0
-select = 1
-prev = 2
-next = 3
-dht = 4
+[device_config.buzzer]
+gpio_chip = "/dev/gpiochip0"
+line = 0
+internal_pull_resistor = true
+
+[device_config.select]
+gpio_chip = "/dev/gpiochip0"
+line = 1
+internal_pull_resistor = true
+
+[device_config.prev]
+gpio_chip = "/dev/gpiochip0"
+line = 2
+internal_pull_resistor = true
+
+[device_config.next]
+gpio_chip = "/dev/gpiochip0"
+line = 3
+internal_pull_resistor = true
+
+[device_config.dht]
+gpio_chip = "/dev/gpiochip0"
+line = 4
+internal_pull_resistor = true

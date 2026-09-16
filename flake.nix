@@ -137,8 +137,8 @@
               { stdenv }:
               pkgs.makeRustPlatform {
                 inherit stdenv;
-                cargo = myPkgs.rustToolchain;
-                rustc = myPkgs.rustToolchain;
+                cargo = myPkgs.cargo;
+                rustc = myPkgs.rustc;
               }
             ) { };
 
