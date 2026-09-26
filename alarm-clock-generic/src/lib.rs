@@ -80,8 +80,10 @@ static TIMER_CHANNEL: TimerChannel = Channel::new();
 pub enum Error<I2c> {
 	#[error("failed to spawn task")]
 	SpawnError(SpawnError),
-	#[error("pin communication failed")]
-	I2c(I2c),
+	#[error("failed to set up alphanumeric display")]
+	Alphanum(I2c),
+	#[error("failed to set up bmp180")]
+	Bmp180(I2c),
 }
 
 impl<I2c> From<SpawnError> for Error<I2c> {
@@ -134,14 +136,14 @@ where
 
 	let synth = Synth::new(config.synth_config.clone());
 
-	let mut alphanum = Alphanum::new(&mut startup_config.i2c).map_err(Error::I2c)?;
+	let mut alphanum = Alphanum::new(&mut startup_config.i2c).map_err(Error::Alphanum)?;
 	alphanum
 		.set_brightness(&mut startup_config.i2c, config.brightness)
 		.await
-		.map_err(Error::I2c)?;
+		.map_err(Error::Alphanum)?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
-	let bmp = Bmp180::new(&mut startup_config.i2c).map_err(Error::I2c)?;
+	let bmp = Bmp180::new(&mut startup_config.i2c).map_err(Error::Bmp180)?;
 
 	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
 	let buttons = startup_config

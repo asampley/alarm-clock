@@ -76,6 +76,8 @@ struct DeviceConfig {
 }
 
 pub async fn run(spawner: Spawner) -> Result<(), Error> {
+	env_logger::init();
+
 	let args = Args::parse();
 
 	let config: Config = toml::from_str(&std::fs::read_to_string(&args.config)?)?;
