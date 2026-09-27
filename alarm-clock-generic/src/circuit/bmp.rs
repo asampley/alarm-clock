@@ -2,6 +2,7 @@ use embassy_time::{Duration, Timer};
 
 use embedded_hal::i2c::I2c as SyncI2c;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
+use thiserror::Error;
 
 use crate::circuit::alphanum::{Char, DOT, char_to_alphanum, digit_to_alphanum};
 use crate::info;
@@ -40,6 +41,14 @@ pub struct Pressure(i64);
 pub struct BmpReading {
 	pub temperature: Temperature,
 	pub pressure: Pressure,
+}
+
+#[derive(Debug, Error)]
+pub enum CalibrationError<I2cError> {
+	#[error("i2c error")]
+	I2c(#[from] I2cError),
+	#[error("invalid calibration")]
+	InvalidCalibration(Calibration),
 }
 
 impl core::fmt::Display for Temperature {
@@ -92,7 +101,7 @@ impl Pressure {
 
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-struct Calibration {
+pub struct Calibration {
 	ac1: i16,
 	ac2: i16,
 	ac3: i16,
@@ -107,21 +116,21 @@ struct Calibration {
 }
 
 impl Bmp180 {
-	pub fn with_address<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Self, I2c::Error> {
+	pub fn with_address<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Self, CalibrationError<I2c::Error>> {
 		Ok(Self {
 			address,
 			cal: Self::read_calibration_data_sync(address, i2c)?,
 		})
 	}
 
-	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, I2c::Error> {
+	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, CalibrationError<I2c::Error>> {
 		Self::with_address(0x77, i2c)
 	}
 
 	fn read_calibration_data_sync<I2c: SyncI2c>(
 		address: u8,
 		i2c: &mut I2c,
-	) -> Result<Calibration, I2c::Error> {
+	) -> Result<Calibration, CalibrationError<I2c::Error>> {
 		let mut buffer = [0; 22];
 		SyncI2c::write_read(i2c, address, &[0xAA], &mut buffer)?;
 
@@ -138,6 +147,12 @@ impl Bmp180 {
 			mc: i16::from_be_bytes([buffer[18], buffer[19]]),
 			md: i16::from_be_bytes([buffer[20], buffer[21]]),
 		};
+
+		for chunk in buffer.as_chunks::<2>().0 {
+			if chunk[0] == chunk[1] && (chunk[0] == 0x00 || chunk[1] == 0xFF) {
+				return Err(CalibrationError::InvalidCalibration(calibration))
+			}
+		}
 
 		info!("{:?}", calibration);
 

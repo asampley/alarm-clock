@@ -13,7 +13,7 @@ pub enum FlexPin {
 
 pub struct I2c {
 	send_transaction: Sender<(u8, Box<[OwnedOperation]>)>,
-	receive_transaction_response: Receiver<Result<(), linux_embedded_hal::I2CError>>,
+	receive_transaction_response: Receiver<Result<Box<[OwnedOperation]>, linux_embedded_hal::I2CError>>,
 }
 
 pub enum OwnedOperation {
@@ -183,15 +183,25 @@ impl embedded_hal_async::i2c::I2c for I2c {
 		address: u8,
 		operations: &mut [embedded_hal::i2c::Operation<'_>],
 	) -> Result<(), Self::Error> {
-		let operations: Box<[_]> = operations.iter().map(|op| {
+		let owned_operations: Box<[_]> = operations.iter().map(|op| {
 			match op {
 				embedded_hal::i2c::Operation::Read(buf) => OwnedOperation::Read(buf.to_vec().into_boxed_slice()),
 				embedded_hal::i2c::Operation::Write(buf) => OwnedOperation::Write(buf.to_vec().into_boxed_slice()),
 			}
 		}).collect();
 
-		self.send_transaction.send((address, operations)).await.map_err(I2cError::SendRequest)?;
-		Ok(self.receive_transaction_response.recv().await.map_err(I2cError::RecvResponse)??)
+		self.send_transaction.send((address, owned_operations)).await.map_err(I2cError::SendRequest)?;
+		let response = self.receive_transaction_response.recv().await.map_err(I2cError::RecvResponse)??;
+		for (i, op) in response.iter().enumerate() {
+			match op {
+				OwnedOperation::Read(buf) => match &mut operations[i] {
+					embedded_hal::i2c::Operation::Read(real_buf) => real_buf.copy_from_slice(buf),
+					_ => unreachable!(),
+				},
+				_ => (),
+			}
+		}
+		Ok(())
 	}
 }
 
@@ -216,7 +226,12 @@ impl From<I2cdev> for I2c {
 					})
 					.collect();
 
-					send.send(value.transaction(request.0, &mut operations)).await.unwrap();
+					send.send(value.transaction(request.0, &mut operations)
+						.map(|()| operations.into_iter().map(|op| match op {
+							embedded_hal::i2c::Operation::Read(buf) => OwnedOperation::Read(buf.to_vec().into_boxed_slice()),
+							embedded_hal::i2c::Operation::Write(buf) => OwnedOperation::Write(buf.to_vec().into_boxed_slice()),
+						}).collect())
+					).await.unwrap();
 				}
 			});
 		});

@@ -56,6 +56,7 @@ use tasks::timer::timer_task;
 mod time;
 use time::ClockTime;
 
+use crate::circuit::bmp::CalibrationError;
 use crate::storage::{LOAD_HAL, SAVE_HAL, load_settings};
 use crate::tasks::buzzer::UpdateBuzzerTask;
 use crate::tasks::dht::DhtTask;
@@ -83,7 +84,7 @@ pub enum Error<I2c> {
 	#[error("failed to set up alphanumeric display")]
 	Alphanum(I2c),
 	#[error("failed to set up bmp180")]
-	Bmp180(I2c),
+	Bmp180(CalibrationError<I2c>),
 }
 
 impl<I2c> From<SpawnError> for Error<I2c> {
@@ -143,7 +144,26 @@ where
 		.map_err(Error::Alphanum)?;
 	alphanum.ascii_uppercase(config.ascii_uppercase);
 
-	let bmp = Bmp180::new(&mut startup_config.i2c).map_err(Error::Bmp180)?;
+	// retry if calibration fails at first
+	let mut retries = 5;
+	let bmp = loop {
+		match Bmp180::new(&mut startup_config.i2c).map_err(Error::Bmp180) {
+			Ok(v) => break Ok(v),
+			Err(e) => {
+				warn!("Invalid calibration: {:?}. Retries remaining: {}", e, retries);
+				if retries == 0 {
+					break Err(e)
+				}
+				embassy_time::Timer::after_millis(200).await
+			}
+		}
+		retries -= 1
+	};
+
+	let bmp = match bmp {
+		Ok(v) => v,
+		Err(e) => return Err(e),
+	};
 
 	let button_bounce_time = Duration::from_millis(config.button_bounce_ms);
 	let buttons = startup_config
