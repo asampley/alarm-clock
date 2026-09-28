@@ -64,7 +64,7 @@ impl FlexPin {
 		if !matches!(self, Self::Input(_)) {
 			let mut temp = FlexPin::Poison;
 			core::mem::swap(self, &mut temp);
-			core::mem::swap(self, &mut temp.into_input_pin()?);
+			*self = temp.into_input_pin()?;
 		}
 
 		if let Self::Input(i) = self {
@@ -85,7 +85,7 @@ impl FlexPin {
 		if !matches!(self, Self::Input(_)) {
 			let mut temp = FlexPin::Poison;
 			core::mem::swap(self, &mut temp);
-			core::mem::swap(self, &mut temp.into_output_pin()?);
+			*self = temp.into_output_pin()?;
 		}
 
 		if let Self::Output(o) = self {
@@ -207,12 +207,11 @@ impl embedded_hal_async::i2c::I2c for I2c {
 			.await
 			.map_err(I2cError::RecvResponse)??;
 		for (i, op) in response.iter().enumerate() {
-			match op {
-				OwnedOperation::Read(buf) => match &mut operations[i] {
+			if let OwnedOperation::Read(buf) = op {
+				match &mut operations[i] {
 					embedded_hal::i2c::Operation::Read(real_buf) => real_buf.copy_from_slice(buf),
 					_ => unreachable!(),
-				},
-				_ => (),
+				}
 			}
 		}
 		Ok(())
@@ -240,7 +239,7 @@ impl From<I2cdev> for I2c {
 								embedded_hal::i2c::Operation::Read(&mut *buf)
 							}
 							OwnedOperation::Write(buf) => {
-								embedded_hal::i2c::Operation::Write(&mut *buf)
+								embedded_hal::i2c::Operation::Write(&*buf)
 							}
 						})
 						.collect();

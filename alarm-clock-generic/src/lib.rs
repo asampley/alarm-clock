@@ -150,9 +150,12 @@ where
 		match Bmp180::new(&mut startup_config.i2c).map_err(Error::Bmp180) {
 			Ok(v) => break Ok(v),
 			Err(e) => {
-				warn!("Invalid calibration: {:?}. Retries remaining: {}", e, retries);
+				warn!(
+					"Invalid calibration: {:?}. Retries remaining: {}",
+					e, retries
+				);
 				if retries == 0 {
-					break Err(e)
+					break Err(e);
 				}
 				embassy_time::Timer::after_millis(200).await
 			}

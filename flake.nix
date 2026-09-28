@@ -119,6 +119,8 @@
 
             cargo = myPkgs.rustToolchain;
             rustc = myPkgs.rustToolchain;
+            clippy = myPkgs.devRustToolchain;
+            rustfmt = myPkgs.devRustToolchain;
 
             rustToolchain = myPkgs.callPackage (
               { stdenv }:
@@ -129,6 +131,21 @@
               combine [
                 minimal.cargo
                 minimal.rustc
+                targets.${stdenv.hostPlatform.rust.rustcTarget}.latest.rust-std
+              ]
+            ) { };
+
+            devRustToolchain = myPkgs.callPackage (
+              { stdenv }:
+              let
+                fenix' = fenix.packages.${stdenv.buildPlatform.system};
+              in
+              with fenix';
+              combine [
+                minimal.cargo
+                minimal.rustc
+                complete.rustfmt
+                complete.clippy
                 targets.${stdenv.hostPlatform.rust.rustcTarget}.latest.rust-std
               ]
             ) { };

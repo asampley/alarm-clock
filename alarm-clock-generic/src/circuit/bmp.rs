@@ -110,6 +110,7 @@ pub struct Calibration {
 	ac6: u16,
 	b1: i16,
 	b2: i16,
+	#[allow(unused)]
 	mb: i16,
 	mc: i16,
 	md: i16,

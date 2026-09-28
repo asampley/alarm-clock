@@ -79,6 +79,7 @@ impl core::ops::Sub<ClockTime> for ClockTime {
 	type Output = ClockTime;
 
 	fn sub(self, rhs: ClockTime) -> Self::Output {
+		#[allow(clippy::suspicious_arithmetic_impl)]
 		ClockTime::new((self.minutes.wrapping_sub(rhs.minutes) as i16).rem_euclid(24 * 60) as u16)
 	}
 }
