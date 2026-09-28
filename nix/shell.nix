@@ -3,6 +3,7 @@
   mkShell,
   just,
   rust-analyzer,
+  rustfmt,
   probe-rs-tools,
   ...
 }:
@@ -11,6 +12,7 @@ mkShell {
   buildInputs = [
     just
     rust-analyzer
+    rustfmt
     probe-rs-tools
   ];
 }

@@ -56,7 +56,7 @@ use tasks::timer::timer_task;
 mod time;
 use time::ClockTime;
 
-use crate::circuit::bmp::CalibrationError;
+use crate::circuit::bmp::BmpError;
 use crate::storage::{LOAD_HAL, SAVE_HAL, load_settings};
 use crate::tasks::buzzer::UpdateBuzzerTask;
 use crate::tasks::dht::DhtTask;
@@ -84,7 +84,7 @@ pub enum Error<I2c> {
 	#[error("failed to set up alphanumeric display")]
 	Alphanum(I2c),
 	#[error("failed to set up bmp180")]
-	Bmp180(CalibrationError<I2c>),
+	Bmp180(BmpError<I2c>),
 }
 
 impl<I2c> From<SpawnError> for Error<I2c> {

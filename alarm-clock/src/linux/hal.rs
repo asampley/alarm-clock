@@ -1,8 +1,9 @@
 use async_channel::{Receiver, Sender};
 use embedded_hal::{digital::PinState, i2c::I2c as _};
 use futures_lite::future::block_on;
-use gpiocdev_embedded_hal::{async_io::InputPin, OutputPin};
+use gpiocdev_embedded_hal::{OutputPin, async_io::InputPin};
 use linux_embedded_hal::I2cdev;
+use log::error;
 use thiserror::Error;
 
 pub enum FlexPin {
@@ -13,7 +14,8 @@ pub enum FlexPin {
 
 pub struct I2c {
 	send_transaction: Sender<(u8, Box<[OwnedOperation]>)>,
-	receive_transaction_response: Receiver<Result<Box<[OwnedOperation]>, linux_embedded_hal::I2CError>>,
+	receive_transaction_response:
+		Receiver<Result<Box<[OwnedOperation]>, linux_embedded_hal::I2CError>>,
 }
 
 pub enum OwnedOperation {
@@ -183,15 +185,27 @@ impl embedded_hal_async::i2c::I2c for I2c {
 		address: u8,
 		operations: &mut [embedded_hal::i2c::Operation<'_>],
 	) -> Result<(), Self::Error> {
-		let owned_operations: Box<[_]> = operations.iter().map(|op| {
-			match op {
-				embedded_hal::i2c::Operation::Read(buf) => OwnedOperation::Read(buf.to_vec().into_boxed_slice()),
-				embedded_hal::i2c::Operation::Write(buf) => OwnedOperation::Write(buf.to_vec().into_boxed_slice()),
-			}
-		}).collect();
+		let owned_operations: Box<[_]> = operations
+			.iter()
+			.map(|op| match op {
+				embedded_hal::i2c::Operation::Read(buf) => {
+					OwnedOperation::Read(buf.to_vec().into_boxed_slice())
+				}
+				embedded_hal::i2c::Operation::Write(buf) => {
+					OwnedOperation::Write(buf.to_vec().into_boxed_slice())
+				}
+			})
+			.collect();
 
-		self.send_transaction.send((address, owned_operations)).await.map_err(I2cError::SendRequest)?;
-		let response = self.receive_transaction_response.recv().await.map_err(I2cError::RecvResponse)??;
+		self.send_transaction
+			.send((address, owned_operations))
+			.await
+			.map_err(I2cError::SendRequest)?;
+		let response = self
+			.receive_transaction_response
+			.recv()
+			.await
+			.map_err(I2cError::RecvResponse)??;
 		for (i, op) in response.iter().enumerate() {
 			match op {
 				OwnedOperation::Read(buf) => match &mut operations[i] {
@@ -216,22 +230,29 @@ impl From<I2cdev> for I2c {
 
 			block_on(async {
 				loop {
-					let request: (u8, Box<[OwnedOperation]>) = receive.recv().await.unwrap();
+					let mut request: (u8, Box<[OwnedOperation]>) = receive.recv().await.unwrap();
 
-					let alloc = bumpalo::Bump::new();
+					let mut operations: Vec<_> = request
+						.1
+						.iter_mut()
+						.map(|op| match op {
+							OwnedOperation::Read(buf) => {
+								embedded_hal::i2c::Operation::Read(&mut *buf)
+							}
+							OwnedOperation::Write(buf) => {
+								embedded_hal::i2c::Operation::Write(&mut *buf)
+							}
+						})
+						.collect();
 
-					let mut operations: Vec<_> = request.1.into_iter().map(|op| match op {
-						OwnedOperation::Read(buf) => embedded_hal::i2c::Operation::Read(alloc.alloc(buf)),
-						OwnedOperation::Write(buf) => embedded_hal::i2c::Operation::Write(alloc.alloc(buf)),
-					})
-					.collect();
-
-					send.send(value.transaction(request.0, &mut operations)
-						.map(|()| operations.into_iter().map(|op| match op {
-							embedded_hal::i2c::Operation::Read(buf) => OwnedOperation::Read(buf.to_vec().into_boxed_slice()),
-							embedded_hal::i2c::Operation::Write(buf) => OwnedOperation::Write(buf.to_vec().into_boxed_slice()),
-						}).collect())
-					).await.unwrap();
+					let _ = send
+						.send(
+							value
+								.transaction(request.0, &mut operations)
+								.map(|()| request.1),
+						)
+						.await
+						.inspect_err(|e| error!("{}", e));
 				}
 			});
 		});

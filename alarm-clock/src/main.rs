@@ -26,5 +26,4 @@ fn main() {
 	executor.run(|spawner| {
 		spawner.spawn(start(spawner).unwrap());
 	});
-
 }

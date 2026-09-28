@@ -44,7 +44,7 @@ pub struct BmpReading {
 }
 
 #[derive(Debug, Error)]
-pub enum CalibrationError<I2cError> {
+pub enum BmpError<I2cError> {
 	#[error("i2c error")]
 	I2c(#[from] I2cError),
 	#[error("invalid calibration")]
@@ -116,21 +116,24 @@ pub struct Calibration {
 }
 
 impl Bmp180 {
-	pub fn with_address<I2c: SyncI2c>(address: u8, i2c: &mut I2c) -> Result<Self, CalibrationError<I2c::Error>> {
+	pub fn with_address<I2c: SyncI2c>(
+		address: u8,
+		i2c: &mut I2c,
+	) -> Result<Self, BmpError<I2c::Error>> {
 		Ok(Self {
 			address,
 			cal: Self::read_calibration_data_sync(address, i2c)?,
 		})
 	}
 
-	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, CalibrationError<I2c::Error>> {
+	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, BmpError<I2c::Error>> {
 		Self::with_address(0x77, i2c)
 	}
 
 	fn read_calibration_data_sync<I2c: SyncI2c>(
 		address: u8,
 		i2c: &mut I2c,
-	) -> Result<Calibration, CalibrationError<I2c::Error>> {
+	) -> Result<Calibration, BmpError<I2c::Error>> {
 		let mut buffer = [0; 22];
 		SyncI2c::write_read(i2c, address, &[0xAA], &mut buffer)?;
 
@@ -150,7 +153,7 @@ impl Bmp180 {
 
 		for chunk in buffer.as_chunks::<2>().0 {
 			if chunk[0] == chunk[1] && (chunk[0] == 0x00 || chunk[1] == 0xFF) {
-				return Err(CalibrationError::InvalidCalibration(calibration))
+				return Err(BmpError::InvalidCalibration(calibration));
 			}
 		}
 

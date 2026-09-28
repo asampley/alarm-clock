@@ -4,7 +4,9 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use alarm_clock_generic::channel::event::{ButtonDirection, ButtonFunction};
-use alarm_clock_generic::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
+use alarm_clock_generic::channel::{
+	AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber,
+};
 use alarm_clock_generic::circuit::alphanum::Alphanum;
 use alarm_clock_generic::circuit::bmp::Bmp180;
 use alarm_clock_generic::circuit::button::Button;
@@ -19,10 +21,10 @@ use clap::Parser;
 use log::{error, info};
 
 use embassy_executor::Spawner;
-use gpiocdev::{ line::Bias, line::Drive, line::Value };
-use linux_embedded_hal::i2cdev::linux::LinuxI2CError;
+use gpiocdev::{line::Bias, line::Drive, line::Value};
+use gpiocdev_embedded_hal::{InputPin, OutputPin};
 use linux_embedded_hal::I2cdev;
-use gpiocdev_embedded_hal::{ OutputPin, InputPin };
+use linux_embedded_hal::i2cdev::linux::LinuxI2CError;
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -96,9 +98,7 @@ pub async fn run(spawner: Spawner) -> Result<(), Error> {
 	let button_pin_req = |c: &GpioConfig| {
 		let mut builder = gpiocdev::Request::builder();
 
-		builder
-			.on_chip(&c.gpio_chip)
-			.with_line(c.line);
+		builder.on_chip(&c.gpio_chip).with_line(c.line);
 
 		if c.internal_pull_resistor {
 			builder.with_bias(Bias::PullUp);
@@ -111,15 +111,21 @@ pub async fn run(spawner: Spawner) -> Result<(), Error> {
 	let button_pins = [
 		(
 			ButtonFunction::Select,
-			AsyncInputPin::from(InputPin::try_from(button_pin_req(&config.device_config.select)?)?),
+			AsyncInputPin::from(InputPin::try_from(button_pin_req(
+				&config.device_config.select,
+			)?)?),
 		),
 		(
 			ButtonFunction::Direction(ButtonDirection::Prev),
-			AsyncInputPin::from(InputPin::try_from(button_pin_req(&config.device_config.prev)?)?),
+			AsyncInputPin::from(InputPin::try_from(button_pin_req(
+				&config.device_config.prev,
+			)?)?),
 		),
 		(
 			ButtonFunction::Direction(ButtonDirection::Next),
-			AsyncInputPin::from(InputPin::try_from(button_pin_req(&config.device_config.next)?)?),
+			AsyncInputPin::from(InputPin::try_from(button_pin_req(
+				&config.device_config.next,
+			)?)?),
 		),
 	];
 
@@ -170,7 +176,11 @@ async fn update_buzzer(
 }
 
 #[embassy_executor::task(pool_size = 3)]
-async fn poll_input(event_sender: EventSender, button: Button<AsyncInputPin>, function: ButtonFunction) {
+async fn poll_input(
+	event_sender: EventSender,
+	button: Button<AsyncInputPin>,
+	function: ButtonFunction,
+) {
 	alarm_clock_generic::tasks::input::poll_input(event_sender, button, function).await
 }
 

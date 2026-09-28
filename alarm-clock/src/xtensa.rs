@@ -1,5 +1,7 @@
 use alarm_clock_generic::channel::event::{ButtonDirection, ButtonFunction};
-use alarm_clock_generic::channel::{AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber};
+use alarm_clock_generic::channel::{
+	AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber,
+};
 use alarm_clock_generic::circuit::alphanum::Alphanum;
 use alarm_clock_generic::circuit::bmp::Bmp180;
 use alarm_clock_generic::circuit::button::Button;
