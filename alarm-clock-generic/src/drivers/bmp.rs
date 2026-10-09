@@ -1,10 +1,13 @@
+use defmt_or_log::FormatOrDebug;
+
 use embassy_time::{Duration, Timer};
 
+use embedded_hal::i2c::ErrorType;
 use embedded_hal::i2c::I2c as SyncI2c;
 use embedded_hal_async::i2c::I2c as AsyncI2c;
 use thiserror::Error;
 
-use crate::circuit::alphanum::{Char, DOT, char_to_alphanum, digit_to_alphanum};
+use crate::drivers::alphanum::{Char, DOT, char_to_alphanum, digit_to_alphanum};
 use crate::info;
 
 const CONTROL_ADDRESS: u8 = 0xF4;
@@ -44,7 +47,8 @@ pub struct BmpReading {
 }
 
 #[derive(Debug, Error)]
-pub enum BmpError<I2cError> {
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum BmpError<I2cError: FormatOrDebug> {
 	#[error("i2c error")]
 	I2c(#[from] I2cError),
 	#[error("invalid calibration")]
@@ -117,24 +121,33 @@ pub struct Calibration {
 }
 
 impl Bmp180 {
-	pub fn with_address<I2c: SyncI2c>(
+	pub fn with_address<I2c: SyncI2c + ErrorType<Error: FormatOrDebug>>(
 		address: u8,
 		i2c: &mut I2c,
-	) -> Result<Self, BmpError<I2c::Error>> {
+	) -> Result<Self, BmpError<I2c::Error>>
+	where
+		I2c: SyncI2c + ErrorType<Error: FormatOrDebug>,
+	{
 		Ok(Self {
 			address,
 			cal: Self::read_calibration_data_sync(address, i2c)?,
 		})
 	}
 
-	pub fn new<I2c: SyncI2c>(i2c: &mut I2c) -> Result<Self, BmpError<I2c::Error>> {
+	pub fn new<I2c>(i2c: &mut I2c) -> Result<Self, BmpError<I2c::Error>>
+	where
+		I2c: SyncI2c + ErrorType<Error: FormatOrDebug>,
+	{
 		Self::with_address(0x77, i2c)
 	}
 
-	fn read_calibration_data_sync<I2c: SyncI2c>(
+	fn read_calibration_data_sync<I2c>(
 		address: u8,
 		i2c: &mut I2c,
-	) -> Result<Calibration, BmpError<I2c::Error>> {
+	) -> Result<Calibration, BmpError<I2c::Error>>
+	where
+		I2c: SyncI2c + ErrorType<Error: FormatOrDebug>,
+	{
 		let mut buffer = [0; 22];
 		SyncI2c::write_read(i2c, address, &[0xAA], &mut buffer)?;
 

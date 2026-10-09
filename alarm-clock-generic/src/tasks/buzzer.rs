@@ -5,7 +5,7 @@ use embedded_hal::digital::{ErrorType, OutputPin};
 use crate::SYNTH_NOTES;
 use crate::channel::MidiNoteReceiver;
 use crate::channel::message::SynthMessage;
-use crate::circuit::buzzer::Buzzer;
+use crate::drivers::buzzer::Buzzer;
 use crate::error;
 use crate::synth::Synth;
 

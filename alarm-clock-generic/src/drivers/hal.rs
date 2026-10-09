@@ -1,6 +1,6 @@
 #[cfg(target_arch = "xtensa")]
 mod xtensa {
-	use crate::circuit::{button::Button, buzzer::Buzzer, dht::Dht11};
+	use crate::drivers::{button::Button, buzzer::Buzzer, dht::Dht11};
 	use embassy_time::Duration;
 
 	use esp_hal::gpio::{AnyPin, DriveMode, Input, InputConfig, Level, Output, OutputConfig, Pull};

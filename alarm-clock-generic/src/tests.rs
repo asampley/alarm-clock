@@ -7,7 +7,7 @@ use heapless::Vec;
 
 use crate::{ MidiNote, CONFIG };
 use crate::note::Note;
-use crate::circuit::{ Alphanum, Buzzer };
+use crate::drivers::{ Alphanum, Buzzer };
 use crate::selector::{ BinarySelector, LinearSelector, Selector };
 
 macro_rules! assert_delta {

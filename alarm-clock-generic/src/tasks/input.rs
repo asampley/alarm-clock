@@ -4,7 +4,7 @@ use embedded_hal_async::digital::Wait;
 
 use crate::channel::EventSender;
 use crate::channel::event::{ButtonEvent, ButtonFunction};
-use crate::circuit::button::Button;
+use crate::drivers::button::Button;
 use crate::error;
 
 /// Note: needs pool size 3

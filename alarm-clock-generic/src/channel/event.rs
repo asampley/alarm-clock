@@ -1,7 +1,7 @@
 use embassy_time::Instant;
 
-use crate::circuit::bmp::BmpReading;
-use crate::circuit::dht::Dht11Reading;
+use crate::drivers::bmp::BmpReading;
+use crate::drivers::dht::Dht11Reading;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]

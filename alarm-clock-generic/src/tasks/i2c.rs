@@ -11,8 +11,8 @@ use heapless::{String, Vec};
 use crate::channel::event::SensorEvent;
 use crate::channel::message::{AlphanumMessage, EventMessage, SensorMessage};
 use crate::channel::{AlphanumReceiver, EventSender, SensorSubscriber};
-use crate::circuit::alphanum::{Alphanum, Char, char_to_alphanum};
-use crate::circuit::bmp::Bmp180;
+use crate::drivers::alphanum::{Alphanum, Char, char_to_alphanum};
+use crate::drivers::bmp::Bmp180;
 use crate::{CONFIG, error, info};
 
 const BLANKS: &str = "    ";

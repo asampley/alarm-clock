@@ -5,7 +5,7 @@ use heapless::{String, Vec};
 use midly::MidiMessage;
 use midly::num::u4;
 
-use crate::circuit::alphanum::{BlinkRate, Char};
+use crate::drivers::alphanum::{BlinkRate, Char};
 use crate::midi_dir::Midi;
 use crate::util::Calf;
 

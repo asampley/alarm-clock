@@ -4,7 +4,7 @@ use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
 use crate::channel::event::SensorEvent;
 use crate::channel::message::{EventMessage, SensorMessage};
 use crate::channel::{EventSender, SensorSubscriber};
-use crate::circuit::dht::Dht11;
+use crate::drivers::dht::Dht11;
 use crate::{error, info};
 
 pub type DhtTask<S, P> = fn(

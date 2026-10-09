@@ -13,9 +13,9 @@ use crate::channel::message::{
 	AlphanumMessage, EventMessage, PlayerMessage, SensorMessage, TimerMessage,
 };
 use crate::channel::{AlphanumSender, PlayerSender, SensorPublisher, TimerSender};
-use crate::circuit::alphanum::BlinkRate;
-use crate::circuit::bmp::BmpReading;
-use crate::circuit::dht::Dht11Reading;
+use crate::drivers::alphanum::BlinkRate;
+use crate::drivers::bmp::BmpReading;
+use crate::drivers::dht::Dht11Reading;
 use crate::midi_dir::Midi;
 use crate::selector::{BinarySelector, ExponentialSelector, LinearSelector, Selector};
 use crate::storage::{modify_settings, settings};

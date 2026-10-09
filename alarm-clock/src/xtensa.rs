@@ -2,11 +2,11 @@ use alarm_clock_generic::channel::event::{ButtonDirection, ButtonFunction};
 use alarm_clock_generic::channel::{
 	AlphanumReceiver, EventSender, MidiNoteReceiver, SensorSubscriber,
 };
-use alarm_clock_generic::circuit::alphanum::Alphanum;
-use alarm_clock_generic::circuit::bmp::Bmp180;
-use alarm_clock_generic::circuit::button::Button;
-use alarm_clock_generic::circuit::buzzer::Buzzer;
-use alarm_clock_generic::circuit::dht::Dht11;
+use alarm_clock_generic::drivers::alphanum::Alphanum;
+use alarm_clock_generic::drivers::bmp::Bmp180;
+use alarm_clock_generic::drivers::button::Button;
+use alarm_clock_generic::drivers::buzzer::Buzzer;
+use alarm_clock_generic::drivers::dht::Dht11;
 pub use alarm_clock_generic::startup;
 use alarm_clock_generic::storage::SETTINGS_MAX_SIZE;
 use alarm_clock_generic::synth::Synth;

@@ -1,7 +1,7 @@
 #![no_std]
 #![feature(impl_trait_in_assoc_type)]
 
-use defmt_or_log::Debug2Format;
+use defmt_or_log::{Debug2Format, FormatOrDebug};
 
 pub use defmt_or_log::{debug, error, info, trace, warn};
 #[cfg(feature = "defmt")]
@@ -18,8 +18,8 @@ use futures_lite::FutureExt;
 
 use thiserror::Error;
 
-pub mod circuit;
-use circuit::{alphanum::Alphanum, bmp::Bmp180, button::Button, buzzer::Buzzer, dht::Dht11};
+pub mod drivers;
+use drivers::{alphanum::Alphanum, bmp::Bmp180, button::Button, buzzer::Buzzer, dht::Dht11};
 
 pub mod tweaks;
 use tweaks::Config;
@@ -56,7 +56,7 @@ use tasks::timer::timer_task;
 mod time;
 use time::ClockTime;
 
-use crate::circuit::bmp::BmpError;
+use crate::drivers::bmp::BmpError;
 use crate::storage::{LOAD_HAL, SAVE_HAL, load_settings};
 use crate::tasks::buzzer::UpdateBuzzerTask;
 use crate::tasks::dht::DhtTask;
@@ -78,7 +78,8 @@ static SENSOR_CHANNEL: SensorPubSub = PubSubChannel::new();
 static TIMER_CHANNEL: TimerChannel = Channel::new();
 
 #[derive(Debug, Error)]
-pub enum Error<I2c> {
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum Error<I2c: FormatOrDebug> {
 	#[error("failed to spawn task")]
 	SpawnError(SpawnError),
 	#[error("failed to set up alphanumeric display")]
@@ -87,7 +88,7 @@ pub enum Error<I2c> {
 	Bmp180(BmpError<I2c>),
 }
 
-impl<I2c> From<SpawnError> for Error<I2c> {
+impl<I2c: FormatOrDebug> From<SpawnError> for Error<I2c> {
 	fn from(value: SpawnError) -> Self {
 		Self::SpawnError(value)
 	}
@@ -123,7 +124,7 @@ where
 	P1: OutputPin,
 	P2: InputPin + Wait,
 	P3: InputPin + OutputPin,
-	P4: AsyncI2c + SyncI2c + i2c::ErrorType,
+	P4: AsyncI2c + SyncI2c + i2c::ErrorType<Error: FormatOrDebug>,
 {
 	let config = &CONFIG;
 
